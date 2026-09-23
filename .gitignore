@@ -1,0 +1,9 @@
+/target/
+/.rideology-cache/
+/*.gpx
+/*.jpg
+/*.txt
+/*.md
+/*.csv
+!/AGENTS.md
+!/README.md
