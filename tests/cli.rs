@@ -294,3 +294,66 @@ fn gpx_uses_recording_time_across_trips_and_freezes_stopped_points() {
         }
     }
 }
+
+#[test]
+fn overlay_is_mp4_and_uses_elapsed_timestamps() {
+    if Command::new("ffmpeg").arg("-version").output().is_err() {
+        return;
+    }
+    let workspace = Workspace::new();
+    let csv = "Title,Video test\nelapsed_msec,gps_latitude,gps_longitude,engine_RPM,wheel_speed(km/h),water_temperature(C),gear_position\n0,0,0,1000,10,90,1\n250,0,0.0001,2000,20,91,2\n1000,0,0.0002,3000,30,92,N\n";
+    fs::write(workspace.0.join("video.csv"), csv).unwrap();
+    let output = workspace.run(&[
+        "video.csv",
+        "--offline",
+        "--overlay",
+        "--overlay-fps",
+        "10",
+        "--overlay-size",
+        "960x256",
+        "--redline-rpm",
+        "10000",
+    ]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let video = workspace.0.join("video-trip-1.mp4");
+    let probe = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=codec_name,pix_fmt,nb_frames,width,height",
+            "-of",
+            "default=noprint_wrappers=1",
+        ])
+        .arg(&video)
+        .output()
+        .unwrap();
+    let info = String::from_utf8_lossy(&probe.stdout);
+    assert!(info.contains("codec_name=h264"), "{info}");
+    assert!(info.contains("pix_fmt=yuv420p"), "{info}");
+    assert!(info.contains("nb_frames=11"), "{info}");
+    assert!(info.contains("width=960"), "{info}");
+    assert!(info.contains("height=256"), "{info}");
+    assert!(workspace.0.join("video-trip-1.jpg").exists());
+    assert!(workspace.0.join("video-trip-1.gpx").exists());
+}
+
+#[test]
+fn missing_input_error_names_the_resolved_csv_path() {
+    let workspace = Workspace::new();
+    let output = workspace.run(&["missing.csv", "--offline", "--overlay"]);
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(error.contains("Cannot read input CSV"), "{error}");
+    assert!(
+        error.contains(&workspace.0.join("missing.csv").display().to_string()),
+        "{error}"
+    );
+    assert!(error.contains("No such file or directory"), "{error}");
+}

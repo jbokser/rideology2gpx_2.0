@@ -18,6 +18,18 @@ For moving points, 200 bidirectional constraint-fitting passes adjust neighborin
 
 Trip boundaries prevent interpolation across missing telemetry. The fitted trajectory does not remove samples or change their times. A viewer that calculates speed from consecutive points should show less jitter, although its own filtering and interpolation may affect the displayed result.
 
+### Instrument video
+
+Add `--overlay` to export an H.264 `.mp4` with a black background for each detected trip. The videos are saved beside the GPX and JPG files as `input-trip-1.mp4`, etc. This requires `ffmpeg` with `libx264` on `PATH`. Existing reports, GPX tracks, and charts are still generated.
+
+```bash
+cargo run --release -- tigre.csv --trips --offline --overlay --overlay-fps 60 --overlay-size 960x256 --redline-rpm 10000
+```
+
+The default video is a compact 960x256 instrument panel at 30 FPS, ready to position in an editor. `--overlay-fps` accepts 1–120 FPS; `--overlay-size` accepts even dimensions from 480x128 to 3840x2160. The panel is centered if the selected aspect ratio differs from the default. `--redline-rpm` sets the point where the horizontal RPM bar turns red (default 10000). These options also enable video generation without `--overlay`.
+
+Each video starts at its trip's first telemetry sample (video time zero). Frames are placed on the output FPS timeline and speed, RPM, and coolant temperature are linearly interpolated using `elapsed_msec`. Gear changes occur at their recorded timestamps and remain discrete; neutral is green and shifts are shown with a white background and colored gear number for one second. Speed appears first, gear sits beside RPM, and coolant temperature appears smaller below RPM. The video uses a pixel-style monospace font. Leading zero placeholders are dark gray while significant digits remain white. The RPM bar progresses from green to yellow at 80% of the configured redline, then red at the redline. The last telemetry instant is included; the encoded video duration is rounded up to a whole frame. Align the video's first frame with the trip's first GPX track point or the elapsed range in the `--trips` report. Export progress is printed to stderr for each trip. To place the video over camera footage, use a Screen or Lighten blend mode in your editor; black pixels then contribute no light to the composite. MP4 does not carry an alpha channel.
+
 ### Trip charts
 
 Every run also generates one JPEG chart with speed, RPM, and gear per detected trip

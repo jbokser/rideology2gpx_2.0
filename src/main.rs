@@ -1,6 +1,7 @@
 mod charts;
 mod geocoding;
 mod gpx;
+mod overlay;
 
 use std::{collections::BTreeMap, env, error::Error, fs, process};
 
@@ -504,7 +505,7 @@ fn report_path(
     Ok(output)
 }
 
-const USAGE: &str = "Usage: rideology2gpx <ride.csv> [--trips] [--min-speed KM/H] [--stop-seconds SECONDS] [--offline] [--output-dir DIRECTORY] [--date \"YYYY-MM-DD HH:MM:SS\"]";
+const USAGE: &str = "Usage: rideology2gpx <ride.csv> [--trips] [--min-speed KM/H] [--stop-seconds SECONDS] [--offline] [--overlay] [--overlay-fps FPS] [--overlay-size WIDTHxHEIGHT] [--redline-rpm RPM] [--output-dir DIRECTORY] [--date \"YYYY-MM-DD HH:MM:SS\"]";
 
 fn run() -> Result<()> {
     let mut args = env::args_os().skip(1);
@@ -516,11 +517,22 @@ fn run() -> Result<()> {
     let mut min_speed = 3.0;
     let mut stop_seconds = 120.0;
     let mut custom_stop = false;
+    let mut video = false;
+    let mut video_options = overlay::Options {
+        fps: 30,
+        width: 960,
+        height: 256,
+        redline_rpm: 10_000.0,
+    };
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--help" | "-h") => {
                 println!(
-                    "{USAGE}\n\nPrint a text ride report and save .md, .txt, and per-trip GPX tracks and speed, RPM, and gear JPG charts beside the input CSV. Supports UTF-8 and Shift-JIS CSV exports.\n\n--trips                 Report each moving period separately.\n--min-speed KM/H        Movement threshold (default: 3; strictly greater).\n--stop-seconds SECONDS  Minimum stop separating trips (default: 120).\n--output-dir, -o DIR    Write all files in DIR; create it if needed.\n--date DATE[ TIME]      Recording start, YYYY-MM-DD[ HH:MM:SS]; default: today at 00:00:00 local. RFC3339 offsets accepted.\n--offline               Skip all location lookups (coordinates only).\n\nOnline mode sends report endpoint coordinates to Nominatim and caches area names.\n\n--stop-seconds requires --trips. --min-speed also filters average and median speed. Recording gaps always split trips."
+                    "{USAGE}\n\nPrint a text ride report and save .md, .txt, and per-trip GPX tracks and speed, RPM, and gear JPG charts beside the input CSV. Supports UTF-8 and Shift-JIS CSV exports.\n\n--trips                 Report each moving period separately.\n--min-speed KM/H        Movement threshold (default: 3; strictly greater).\n--stop-seconds SECONDS  Minimum stop separating trips (default: 120).\n--output-dir, -o DIR    Write all files in DIR; create it if needed.\n--date DATE[ TIME]      Recording start, YYYY-MM-DD[ HH:MM:SS]; default: today at 00:00:00 local. RFC3339 offsets accepted.\n--offline               Skip all location lookups (coordinates only).
+--overlay               Write an MP4 instrument video with black background for each trip (requires ffmpeg/libx264).
+--overlay-fps FPS       Overlay frame rate (1-120; default: 30). Implies --overlay.
+--overlay-size WxH      Even video dimensions (default: 960x256). Implies --overlay.
+--redline-rpm RPM      RPM where the bar turns red (default: 10000). Implies --overlay.\n\nOnline mode sends report endpoint coordinates to Nominatim and caches area names.\n\n--stop-seconds requires --trips. --min-speed also filters average and median speed. Recording gaps always split trips."
                 );
                 println!("\n{}", geocoding::ATTRIBUTION);
                 return Ok(());
@@ -540,6 +552,46 @@ fn run() -> Result<()> {
                 output_dir = Some(std::path::PathBuf::from(directory));
             }
             Some("--trips") => per_trip = true,
+            Some("--overlay") => video = true,
+            Some("--overlay-fps") => {
+                video_options.fps = args
+                    .next()
+                    .and_then(|v| v.to_str().and_then(|v| v.parse().ok()))
+                    .filter(|v: &u32| (1..=120).contains(v))
+                    .ok_or("--overlay-fps requires an integer from 1 to 120")?;
+                video = true;
+            }
+            Some("--overlay-size") => {
+                let value = args.next().ok_or("--overlay-size requires WIDTHxHEIGHT")?;
+                let value = value
+                    .to_str()
+                    .ok_or("--overlay-size requires WIDTHxHEIGHT")?;
+                let (w, h) = value
+                    .split_once('x')
+                    .ok_or("--overlay-size requires WIDTHxHEIGHT")?;
+                video_options.width = w.parse().map_err(|_| "Invalid overlay width")?;
+                video_options.height = h.parse().map_err(|_| "Invalid overlay height")?;
+                if video_options.width < 480
+                    || video_options.height < 128
+                    || video_options.width > 3840
+                    || video_options.height > 2160
+                    || !video_options.width.is_multiple_of(2)
+                    || !video_options.height.is_multiple_of(2)
+                {
+                    return Err(
+                        "--overlay-size requires even dimensions from 480x128 to 3840x2160".into(),
+                    );
+                }
+                video = true;
+            }
+            Some("--redline-rpm") => {
+                video_options.redline_rpm = args
+                    .next()
+                    .and_then(|v| v.to_str().and_then(|v| v.parse().ok()))
+                    .filter(|v: &f64| v.is_finite() && *v > 0.0 && *v <= 100_000.0)
+                    .ok_or("--redline-rpm requires a positive RPM value up to 100000")?;
+                video = true;
+            }
             Some("--offline") => offline = true,
             Some(flag @ ("--min-speed" | "--stop-seconds")) => {
                 let value: f64 = args
@@ -574,7 +626,15 @@ fn run() -> Result<()> {
     let path = std::path::PathBuf::from(path.ok_or(USAGE)?);
     let destination = report_path(&path, output_dir.as_deref(), "md")?;
     let text_destination = report_path(&path, output_dir.as_deref(), "txt")?;
-    let (title, mut samples) = read_ride(&fs::read(&path)?)?;
+    let csv = fs::read(&path).map_err(|error| {
+        let absolute = if path.is_absolute() {
+            path.clone()
+        } else {
+            env::current_dir().unwrap_or_default().join(&path)
+        };
+        format!("Cannot read input CSV {}: {error}", absolute.display())
+    })?;
+    let (title, mut samples) = read_ride(&csv)?;
     if let Some(parent) = destination.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
     }
@@ -638,6 +698,11 @@ fn run() -> Result<()> {
         eprintln!("GPX saved to {}", gpx_path.display());
         charts::write_trip_chart(&chart_path, &samples[range.clone()], &chart_date)?;
         eprintln!("Chart saved to {}", chart_path.display());
+        if video {
+            let video_path = overlay::path(&path, chart_directory, i + 1)?;
+            overlay::write(&video_path, &samples[range.clone()], &video_options)?;
+            eprintln!("Overlay saved to {}", video_path.display());
+        }
     }
     fs::write(&destination, markdown_report(&title, &output))?;
     fs::write(&text_destination, &output)?;
