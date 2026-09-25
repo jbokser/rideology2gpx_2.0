@@ -7,7 +7,7 @@ cargo run --release -- file.csv
 # Save to a different directory (created if needed):
 cargo run --release -- file.csv --output-dir reports
 # Run the compiled binary:
-./target/release/rideology2gpx tigre.csv
+./target/release/rideology2gpx file.csv
 ```
 
 ### GPS jitter correction
@@ -20,15 +20,19 @@ Trip boundaries prevent interpolation across missing telemetry. The fitted traje
 
 ### Instrument video
 
-Add `--overlay` to export an H.264 `.mp4` with a black background for each detected trip. The videos are saved beside the GPX and JPG files as `input-trip-1.mp4`, etc. This requires `ffmpeg` with `libx264` on `PATH`. Existing reports, GPX tracks, and charts are still generated.
+[![Instrument video preview](docs/preview.jpg)](docs/preview.mp4)
+
+[Watch the sample video (MP4)](docs/preview.mp4). The image above links to the same video.
+
+Add `--overlay` to export an H.264 `.mp4` with a black background for each detected trip. The videos are saved beside the GPX and JPG files as `input-trip-1.mp4`, etc. A full-size middle-frame image is saved as `input-trip-1-preview.jpg`. If a trip lasts longer than 30 seconds, a 30-second video preview is saved first as `input-trip-1-preview.mp4`. It starts 20 seconds before the highest recorded RPM, shifted as needed to fit within the trip. This requires `ffmpeg` with `libx264` on `PATH`. Existing reports, GPX tracks, and charts are still generated.
 
 ```bash
-cargo run --release -- tigre.csv --trips --offline --overlay --overlay-fps 60 --overlay-size 960x256 --redline-rpm 10000
+cargo run --release -- file.csv --trips --offline --overlay --overlay-fps 60 --overlay-size 1920x512 --redline-rpm 10000
 ```
 
-The default video is a compact 960x256 instrument panel at 30 FPS, ready to position in an editor. `--overlay-fps` accepts 1–120 FPS; `--overlay-size` accepts even dimensions from 480x128 to 3840x2160. The panel is centered if the selected aspect ratio differs from the default. `--redline-rpm` sets the point where the horizontal RPM bar turns red (default 10000). These options also enable video generation without `--overlay`.
+The default video is a 1920x512 instrument panel at 30 FPS, ready to position in an editor. `--overlay-fps` accepts 1–120 FPS; `--overlay-size` accepts even dimensions from 480x128 to 3840x2160. The panel is centered if the selected aspect ratio differs from the default. `--redline-rpm` sets the point where the horizontal RPM bar turns red (default 10000). Above it, the significant RPM digits flash between white and orange. `--temp-warning` sets the coolant warning threshold in °C (default 97); above it, significant temperature digits turn yellow. These options also enable video generation without `--overlay`.
 
-Each video starts at its trip's first telemetry sample (video time zero). Frames are placed on the output FPS timeline and speed, RPM, and coolant temperature are linearly interpolated using `elapsed_msec`. Gear changes occur at their recorded timestamps and remain discrete; neutral is green and shifts are shown with a white background and colored gear number for one second. Speed appears first, gear sits beside RPM, and coolant temperature appears smaller below RPM. The video uses a pixel-style monospace font. Leading zero placeholders are dark gray while significant digits remain white. The RPM bar progresses from green to yellow at 80% of the configured redline, then red at the redline. The last telemetry instant is included; the encoded video duration is rounded up to a whole frame. Align the video's first frame with the trip's first GPX track point or the elapsed range in the `--trips` report. Export progress is printed to stderr for each trip. To place the video over camera footage, use a Screen or Lighten blend mode in your editor; black pixels then contribute no light to the composite. MP4 does not carry an alpha channel.
+Each video starts at its trip's first telemetry sample (video time zero). Frames are placed on the output FPS timeline and speed, RPM, and coolant temperature are linearly interpolated using `elapsed_msec`. Gear changes occur at their recorded timestamps and remain discrete; neutral is green and upshifts and downshifts show a blinking white triangle beside the gear for one second. Speed appears first, gear sits beside RPM, and coolant temperature appears smaller below RPM. Beside it, signed acceleration in g uses wheel-speed changes; its label changes from `ACCEL G` to `BRAKE G` when the value is negative, followed by GPS direction in degrees and eight compass points with a short compass needle to the left of the direction text. The video uses a pixel-style monospace font. Leading zero placeholders are dark gray while significant digits remain white. The RPM bar progresses from green to yellow at 80% of the configured redline, then red at the redline. The last telemetry instant is included; the encoded video duration is rounded up to a whole frame. Align the video's first frame with the trip's first GPX track point or the elapsed range in the `--trips` report. Export progress is printed to stderr for each trip. To place the video over camera footage, use a Screen or Lighten blend mode in your editor; black pixels then contribute no light to the composite. MP4 does not carry an alpha channel.
 
 ### Trip charts
 
@@ -52,7 +56,7 @@ By default, the CLI sends only the reported start and end coordinates to [Nomina
 
 **Public-service limits:** follow the [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/). This integration is for occasional, user-triggered reports, not scheduled or bulk processing. It sends requests sequentially, at least 1.1 seconds apart, identifies the application with a User-Agent, caches results persistently, and credits OpenStreetMap in this README and in `--help`. Processes sharing the same cache also share a request lock and rate limit. Do not run instances with different caches or on multiple machines concurrently against the public service; application-wide traffic must remain below one request per second. Use `--offline` for recordings whose endpoint coordinates should not be sent to the service.
 
-Cache files are stored in `.rideology-cache/` under the current working directory (ignored by Git). They contain queried coordinates and area names, not whole ride traces. Set `RIDEOLOGY_GEOCODE_CACHE` to share a cache across working directories. Cached results do not expire automatically; delete `areas.json` to refresh names. `--offline` skips both cache reads and network lookups. A custom or self-hosted reverse-geocoding endpoint can be selected with `NOMINATIM_URL` without changing the code.
+Cache files are stored in `.rideology-cache/` under the current working directory (ignored by Git). They contain queried coordinates and area names, not whole ride traces. Set `RIDEOLOGY_GEOCODE_CACHE` to share a cache across working directories. Cached results do not expire automatically; delete `areas.json` to refresh names. `--offline` skips both cache reads and network lookups. When either endpoint area name is unavailable, the chart title uses the original CSV ride title plus the trip number, such as `Ride title #1 (2026-09-22)`. A custom or self-hosted reverse-geocoding endpoint can be selected with `NOMINATIM_URL` without changing the code.
 
 Location data: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), available under the ODbL.
 

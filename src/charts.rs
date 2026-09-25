@@ -44,16 +44,13 @@ fn speed_by_distance(samples: &[Sample]) -> Vec<(f64, f64)> {
         .collect()
 }
 
-fn chart_title(samples: &[Sample], date: &str) -> String {
-    let start = samples
-        .first()
-        .and_then(|s| s.area.as_deref())
-        .unwrap_or("Unknown start");
-    let end = samples
-        .last()
-        .and_then(|s| s.area.as_deref())
-        .unwrap_or("Unknown end");
-    format!("{start} → {end} ({date})")
+fn chart_title(samples: &[Sample], ride_title: &str, trip: usize, date: &str) -> String {
+    let start = samples.first().and_then(|s| s.area.as_deref());
+    let end = samples.last().and_then(|s| s.area.as_deref());
+    match (start, end) {
+        (Some(start), Some(end)) => format!("{start} → {end} ({date})"),
+        _ => format!("{ride_title} #{trip} ({date})"),
+    }
 }
 
 fn axis_label(value: f64) -> String {
@@ -91,7 +88,13 @@ fn gear_steps(samples: &[Sample], distances: &[(f64, f64)]) -> Vec<Vec<(f64, i32
     segments
 }
 
-pub fn write_trip_chart(path: &Path, samples: &[Sample], date: &str) -> Result<()> {
+pub fn write_trip_chart(
+    path: &Path,
+    samples: &[Sample],
+    ride_title: &str,
+    trip: usize,
+    date: &str,
+) -> Result<()> {
     if samples.is_empty() {
         return Err("Cannot chart an empty trip".into());
     }
@@ -102,7 +105,10 @@ pub fn write_trip_chart(path: &Path, samples: &[Sample], date: &str) -> Result<(
     {
         let root = BitMapBackend::with_buffer(&mut pixels, SIZE).into_drawing_area();
         root.fill(&WHITE)?;
-        let panels = root.titled(&chart_title(samples, date), ("sans-serif", 32))?;
+        let panels = root.titled(
+            &chart_title(samples, ride_title, trip, date),
+            ("sans-serif", 32),
+        )?;
         let (speed_panel, lower_panels) = panels.split_vertically(470);
         let (rpm_panel, gear_panel) = lower_panels.split_vertically(280);
         let x_max = (total_km * 1.02).max(0.1);
@@ -331,8 +337,18 @@ mod tests {
         samples[0].area = Some("Florida".into());
         samples[1].area = Some("Tigre".into());
         assert_eq!(
-            chart_title(&samples, "2026-09-22"),
+            chart_title(&samples, "Ride title", 1, "2026-09-22"),
             "Florida → Tigre (2026-09-22)"
+        );
+        samples[1].area = None;
+        assert_eq!(
+            chart_title(&samples, "Ida y vuelta a tigre", 2, "2026-09-22"),
+            "Ida y vuelta a tigre #2 (2026-09-22)"
+        );
+        samples[0].area = None;
+        assert_eq!(
+            chart_title(&samples, "Ida y vuelta a tigre", 1, "2026-09-22"),
+            "Ida y vuelta a tigre #1 (2026-09-22)"
         );
     }
 

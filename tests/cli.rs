@@ -309,8 +309,6 @@ fn overlay_is_mp4_and_uses_elapsed_timestamps() {
         "--overlay",
         "--overlay-fps",
         "10",
-        "--overlay-size",
-        "960x256",
         "--redline-rpm",
         "10000",
     ]);
@@ -338,10 +336,62 @@ fn overlay_is_mp4_and_uses_elapsed_timestamps() {
     assert!(info.contains("codec_name=h264"), "{info}");
     assert!(info.contains("pix_fmt=yuv420p"), "{info}");
     assert!(info.contains("nb_frames=11"), "{info}");
-    assert!(info.contains("width=960"), "{info}");
-    assert!(info.contains("height=256"), "{info}");
+    assert!(info.contains("width=1920"), "{info}");
+    assert!(info.contains("height=512"), "{info}");
     assert!(workspace.0.join("video-trip-1.jpg").exists());
+    let preview = image::open(workspace.0.join("video-trip-1-preview.jpg")).unwrap();
+    assert_eq!((preview.width(), preview.height()), (1920, 512));
+    assert!(!workspace.0.join("video-trip-1-preview.mp4").exists());
     assert!(workspace.0.join("video-trip-1.gpx").exists());
+}
+
+#[test]
+fn long_overlay_writes_preview_video_before_full_video() {
+    if Command::new("ffmpeg").arg("-version").output().is_err() {
+        return;
+    }
+    let workspace = Workspace::new();
+    let csv = "Title,Long video\nelapsed_msec,gps_latitude,gps_longitude,engine_RPM,wheel_speed(km/h),water_temperature(C),gear_position\n0,0,0,1000,10,90,1\n25000,0,0.001,9000,20,91,2\n35000,0,0.002,1000,10,90,1\n";
+    fs::write(workspace.0.join("long.csv"), csv).unwrap();
+    let output = workspace.run(&[
+        "long.csv",
+        "--offline",
+        "--overlay",
+        "--overlay-fps",
+        "1",
+        "--overlay-size",
+        "480x128",
+    ]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.find("long-trip-1-preview.mp4").unwrap() < stderr.find("long-trip-1.mp4").unwrap()
+    );
+    let preview = workspace.0.join("long-trip-1-preview.mp4");
+    let probe = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=nb_frames,width,height",
+            "-of",
+            "default=noprint_wrappers=1",
+        ])
+        .arg(&preview)
+        .output()
+        .unwrap();
+    let info = String::from_utf8_lossy(&probe.stdout);
+    assert!(info.contains("nb_frames=30"), "{info}");
+    assert!(info.contains("width=480"), "{info}");
+    assert!(info.contains("height=128"), "{info}");
+    assert!(workspace.0.join("long-trip-1.mp4").exists());
+    assert!(workspace.0.join("long-trip-1-preview.jpg").exists());
 }
 
 #[test]
