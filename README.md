@@ -36,9 +36,11 @@ Each video starts at its trip's first telemetry sample (video time zero). Frames
 
 ### Trip charts
 
-Every run also generates one JPEG chart with speed, RPM, and gear per detected trip
+Every run generates a JPEG chart with speed, RPM, and gear and a speed distribution JPEG for each detected trip. The distribution groups GPS distance into 20 km/h speed ranges, using the speed at the end of each recorded interval. Each bar is labeled with its distance in kilometers. Gaps in telemetry contribute no distance.
 
-Charts are saved beside the reports and honor `--output-dir` / `-o`. The input stem is preserved (for example, `ride.export.csv` produces `ride.export-trip-1.jpg`). Trip numbering starts at 1. Files with matching names are replaced on subsequent runs; older charts with other trip numbers are not automatically deleted if detection settings change.
+A JPEG image of the Markdown report is also saved as `ride.export-report.jpg` (using the input stem). It includes the report title, trip sections, and metric and gear tables.
+
+Charts are saved beside the reports and honor `--output-dir` / `-o`. The input stem is preserved (for example, `ride.export.csv` produces `ride.export-trip-1.jpg` and `ride.export-trip-1-speed-distribution.jpg`). Trip numbering starts at 1. Files with matching names are replaced on subsequent runs; older charts with other trip numbers are not automatically deleted if detection settings change.
 
 Rendering uses Plotters and system fonts. On Debian/Ubuntu, building requires `pkg-config`, `libfreetype6-dev`, and `libfontconfig1-dev`; install a sans-serif font such as `fonts-dejavu-core` for rendering.
 

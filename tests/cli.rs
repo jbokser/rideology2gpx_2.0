@@ -64,12 +64,26 @@ fn writes_markdown_and_text_beside_input_and_matches_stdout() {
     assert_eq!(report.matches("## Max for each gear").count(), 1);
     assert!(report.contains("| Median speed | 80 km/h |"));
     assert!(report.contains("| 6 | 8914 | 190 |"));
+    assert!(
+        input
+            .parent()
+            .unwrap()
+            .join("trip.export-report.jpg")
+            .exists()
+    );
     for trip in 1..=3 {
         let jpg = input
             .parent()
             .unwrap()
             .join(format!("trip.export-trip-{trip}.jpg"));
         assert!(jpg.with_extension("gpx").exists());
+        assert!(
+            input
+                .parent()
+                .unwrap()
+                .join(format!("trip.export-trip-{trip}-speed-distribution.jpg"))
+                .exists()
+        );
         let bytes = fs::read(jpg).unwrap();
         assert!(bytes.starts_with(&[0xff, 0xd8, 0xff]));
         let decoded = image::load_from_memory(&bytes).unwrap();
@@ -116,6 +130,7 @@ fn creates_output_directories_and_replaces_previous_reports() {
     );
     assert!(absolute_dir.join("trip.export.md").exists());
     assert!(absolute_dir.join("trip.export.txt").exists());
+    assert!(absolute_dir.join("trip.export-report.jpg").exists());
     assert!(absolute_dir.join("trip.export-trip-3.jpg").exists());
     assert!(
         workspace
@@ -201,7 +216,7 @@ fn single_point_trip_renders_and_stationary_recording_has_no_charts() {
         fs::read_dir(workspace.0.join("stationary-output"))
             .unwrap()
             .count(),
-        2
+        3
     );
 }
 

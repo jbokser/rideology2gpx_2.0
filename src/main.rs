@@ -2,6 +2,7 @@ mod charts;
 mod geocoding;
 mod gpx;
 mod overlay;
+mod report_image;
 
 use std::{collections::BTreeMap, env, error::Error, fs, process};
 
@@ -714,13 +715,31 @@ fn run() -> Result<()> {
             &chart_date,
         )?;
         eprintln!("Chart saved to {}", chart_path.display());
+        let distribution_path = charts::distribution_path(&path, chart_directory, i + 1)?;
+        charts::write_distribution_chart(
+            &distribution_path,
+            &samples[range.clone()],
+            &title,
+            i + 1,
+            &chart_date,
+        )?;
+        eprintln!("Distribution saved to {}", distribution_path.display());
         if video {
             let video_path = overlay::path(&path, chart_directory, i + 1)?;
             overlay::write(&video_path, &samples[range.clone()], &video_options)?;
             eprintln!("Overlay saved to {}", video_path.display());
         }
     }
-    fs::write(&destination, markdown_report(&title, &output))?;
+    let markdown = markdown_report(&title, &output);
+    fs::write(&destination, &markdown)?;
+    let report_jpg = chart_directory.join(format!(
+        "{}-report.jpg",
+        path.file_stem()
+            .ok_or("Input path has no file stem")?
+            .to_string_lossy()
+    ));
+    report_image::write(&report_jpg, &markdown)?;
+    eprintln!("Report image saved to {}", report_jpg.display());
     fs::write(&text_destination, &output)?;
     {
         use std::io::Write;

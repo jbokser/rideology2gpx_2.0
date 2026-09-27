@@ -21,6 +21,105 @@ pub fn chart_path(input: &Path, output_directory: &Path, trip: usize) -> Result<
     Ok(output_directory.join(name))
 }
 
+pub fn distribution_path(input: &Path, output_directory: &Path, trip: usize) -> Result<PathBuf> {
+    let mut name = OsString::from(input.file_stem().ok_or("Input path has no file stem")?);
+    name.push(format!("-trip-{trip}-speed-distribution.jpg"));
+    Ok(output_directory.join(name))
+}
+
+fn speed_distribution(samples: &[Sample]) -> Vec<f64> {
+    let max_speed = samples.iter().map(|s| s.speed).fold(0.0_f64, f64::max);
+    let mut bins = vec![0.0; (max_speed / 20.0).floor() as usize + 1];
+    let points = speed_by_distance(samples);
+    for (i, pair) in points.windows(2).enumerate() {
+        let km = pair[1].0 - pair[0].0;
+        if km > 0.0 {
+            bins[(samples[i + 1].speed / 20.0).floor() as usize] += km;
+        }
+    }
+    bins
+}
+
+pub fn write_distribution_chart(
+    path: &Path,
+    samples: &[Sample],
+    ride_title: &str,
+    trip: usize,
+    date: &str,
+) -> Result<()> {
+    if samples.is_empty() {
+        return Err("Cannot chart an empty trip".into());
+    }
+    let bins = speed_distribution(samples);
+    let peak = bins.iter().copied().fold(0.0_f64, f64::max);
+    let y_max = (peak * 1.4).max(0.1);
+    let mut pixels = vec![255_u8; (SIZE.0 * SIZE.1 * 3) as usize];
+    {
+        let root = BitMapBackend::with_buffer(&mut pixels, SIZE).into_drawing_area();
+        root.fill(&WHITE)?;
+        let panel = root.titled(
+            &format!(
+                "{} — Speed distribution",
+                chart_title(samples, ride_title, trip, date)
+            ),
+            ("sans-serif", 32),
+        )?;
+        let mut chart = ChartBuilder::on(&panel)
+            .margin_left(35)
+            .margin_right(35)
+            .margin_top(75)
+            .margin_bottom(45)
+            .x_label_area_size(90)
+            .y_label_area_size(100)
+            .build_cartesian_2d(-0.5..bins.len() as f64 - 0.5, 0.0..y_max)?;
+        chart
+            .configure_mesh()
+            .x_desc("Speed range (km/h)")
+            .y_desc("Distance traveled (km)")
+            .axis_desc_style(("sans-serif", 26))
+            .label_style(("sans-serif", 20))
+            .x_labels(bins.len() + 1)
+            .x_label_formatter(&|x| {
+                let index = x.round() as usize;
+                if *x >= 0.0 && index < bins.len() && (*x - index as f64).abs() < 0.1 {
+                    format!("{}–{}", index * 20, (index + 1) * 20)
+                } else {
+                    String::new()
+                }
+            })
+            .y_label_formatter(&|y| axis_label(*y))
+            .light_line_style(RGBColor(235, 239, 244))
+            .draw()?;
+        let blue = RGBColor(28, 107, 174);
+        chart.draw_series(bins.iter().enumerate().map(|(i, &km)| {
+            Rectangle::new(
+                [(i as f64 - 0.42, 0.0), (i as f64 + 0.42, km)],
+                blue.filled(),
+            )
+        }))?;
+        for (index, &km) in bins.iter().enumerate() {
+            chart.draw_series(std::iter::once(Text::new(
+                format!("{} km", axis_label((km * 100.0).round() / 100.0)),
+                (index as f64, km + y_max * 0.025),
+                ("sans-serif", 22)
+                    .into_font()
+                    .color(&BLACK)
+                    .pos(Pos::new(HPos::Center, VPos::Bottom)),
+            )))?;
+        }
+        root.present()?;
+    }
+    let mut file = BufWriter::new(File::create(path)?);
+    JpegEncoder::new_with_quality(&mut file, 92).encode(
+        &pixels,
+        SIZE.0,
+        SIZE.1,
+        ExtendedColorType::Rgb8,
+    )?;
+    file.flush()?;
+    Ok(())
+}
+
 fn speed_by_distance(samples: &[Sample]) -> Vec<(f64, f64)> {
     let intervals: Vec<_> = samples
         .windows(2)
@@ -310,6 +409,21 @@ mod tests {
             gear: "1".into(),
             area: None,
         }
+    }
+
+    #[test]
+    fn distribution_uses_end_speed_and_skips_recording_gaps() {
+        let samples = [
+            sample(0.0, 0.0, 10.0),
+            sample(1000.0, 0.001, 20.0),
+            sample(2000.0, 0.002, 39.0),
+            sample(100000.0, 1.0, 80.0),
+        ];
+        let bins = speed_distribution(&samples);
+        assert_eq!(bins.len(), 5);
+        assert_eq!(bins[0], 0.0);
+        assert!((bins[1] - 0.22239).abs() < 0.000001);
+        assert_eq!(bins[4], 0.0);
     }
 
     #[test]
