@@ -84,7 +84,9 @@ def main() -> int:
     notes = heading + "\n\n"
     for group in ("Added", "Fixed", "Improved", "Documentation", "Other changes"):
         if group in sections:
-            notes += f"### {group}\n\n" + "\n".join(f"- {item}" for item in sections[group]) + "\n\n"
+            notes += f"### {group}\n\n" + "\n".join(
+                f"- {item[:1].upper()}{item[1:]}" for item in sections[group]
+            ) + "\n\n"
     marker = "## [Unreleased]\n"
     if marker not in changelog:
         parser.error("CHANGELOG.md is missing its Unreleased section")
