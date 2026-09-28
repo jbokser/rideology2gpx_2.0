@@ -98,8 +98,13 @@ def main() -> int:
     )
     if count != 1:
         parser.error("could not update the package version in Cargo.toml")
+    first_section = re.search(r"(?m)^## \[[^]]+\]$", changelog)
+    if first_section is None:
+        parser.error("CHANGELOG.md has no release sections")
     MANIFEST.write_text(updated_manifest)
-    CHANGELOG.write_text(changelog.replace(marker, marker + "\n" + notes, 1))
+    CHANGELOG.write_text(
+        changelog[:first_section.start()] + notes + changelog[first_section.start():]
+    )
     try:
         subprocess.run(["cargo", "check", "--offline"], cwd=ROOT, check=True)
     except (OSError, subprocess.CalledProcessError) as error:
