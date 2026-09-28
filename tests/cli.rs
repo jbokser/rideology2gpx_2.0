@@ -42,6 +42,20 @@ impl Drop for Workspace {
 }
 
 #[test]
+fn version_flags_match_package_version_without_input() {
+    let workspace = Workspace::new();
+    for flag in ["--version", "-V"] {
+        let result = workspace.run(&[flag]);
+        assert!(result.status.success());
+        assert_eq!(
+            String::from_utf8(result.stdout).unwrap(),
+            format!("rideology2gpx {}\n", env!("CARGO_PKG_VERSION"))
+        );
+        assert!(result.stderr.is_empty());
+    }
+}
+
+#[test]
 fn writes_markdown_and_text_beside_input_and_matches_stdout() {
     let workspace = Workspace::new();
     let input = workspace.0.join("rides with spaces/trip.export.csv");

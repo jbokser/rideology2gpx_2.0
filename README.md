@@ -1,14 +1,65 @@
 # **$ rideology2gpx**
 
-A Rust CLI that generate `.gpx` and some other data report from a Kawasaki Rideology CSV export.
+Convert Kawasaki Rideology `.csv` exports into `.gpx` tracks, text and Markdown reports, and JPEG charts. Optional instrument videos require FFmpeg.
+
+## Download
+
+Open the [latest GitHub release](https://github.com/jbokser/rideology2gpx_2.0/releases/latest) and download the archive for your system:
+
+| System | Release archive |
+| --- | --- |
+| Linux x86-64 | `rideology2gpx-v[VERSION]-x86_64-unknown-linux-gnu.tar.gz` |
+| Windows x86-64 | `rideology2gpx-v[VERSION]-x86_64-pc-windows-msvc.zip` |
+| macOS Apple Silicon | `rideology2gpx-v[VERSION]-aarch64-apple-darwin.tar.gz` |
+| macOS Intel | `rideology2gpx-v[VERSION]-x86_64-apple-darwin.tar.gz` |
+
+Replace `[VERSION]` with the release number shown on GitHub. For beta releases, choose one from [all releases](https://github.com/jbokser/rideology2gpx_2.0/releases). GitHub Releases also provides `SHA256SUMS.txt` to check the downloaded archive.
+
+## Install
+
+Extract the archive and put the executable in a directory on your `PATH`. On Linux and macOS, for example:
 
 ```bash
-cargo run --release -- file.csv
-# Save to a different directory (created if needed):
-cargo run --release -- file.csv --output-dir reports
-# Run the compiled binary:
-./target/release/rideology2gpx file.csv
+tar -xzf rideology2gpx-vVERSION-*.tar.gz
+mkdir -p "$HOME/.local/bin"
+mv rideology2gpx "$HOME/.local/bin/"
+rideology2gpx --version
 ```
+
+Make sure `$HOME/.local/bin` is on your `PATH`. On macOS, you may instead move the executable to `/usr/local/bin` if that directory is on your `PATH`. If macOS blocks a downloaded executable, review it in **System Settings → Privacy & Security** before allowing it to run.
+
+On Windows, extract the ZIP file, move `rideology2gpx.exe` to a folder of your choice, and add that folder to your user `Path` environment variable. Open a new PowerShell window and check:
+
+```powershell
+rideology2gpx --version
+```
+
+The program uses system fonts to render JPEG charts. Install a sans-serif font if your system does not have one. Instrument videos also require `ffmpeg` with `libx264` on `PATH`.
+
+## Use
+
+Run the command with a Rideology CSV export:
+
+```bash
+rideology2gpx file.csv
+rideology2gpx file.csv --trips --offline
+rideology2gpx file.csv --output-dir reports
+rideology2gpx --help
+rideology2gpx --version
+```
+
+Quote paths containing spaces. By default, outputs are saved beside the CSV. `--output-dir` writes them to another directory and creates it if necessary. The command prints the text report to standard output. It writes Markdown and text reports, GPX tracks, and JPEG charts; `--overlay` also produces MP4 videos. Online mode looks up endpoint area names using Nominatim. Use `--offline` to skip location lookups.
+
+## Build from source
+
+Install Rust and build locally:
+
+```bash
+cargo build --release
+./target/release/rideology2gpx --version
+```
+
+On Windows, use `target\release\rideology2gpx.exe`. On Debian/Ubuntu, building requires `pkg-config`, `libfreetype6-dev`, and `libfontconfig1-dev`; install a sans-serif font such as `fonts-dejavu-core` for rendering.
 
 ### GPS jitter correction
 
@@ -27,7 +78,7 @@ Trip boundaries prevent interpolation across missing telemetry. The fitted traje
 Add `--overlay` to export an H.264 `.mp4` with a black background for each detected trip. The videos are saved beside the GPX and JPG files as `input-trip-1.mp4`, etc. A full-size middle-frame image is saved as `input-trip-1-preview.jpg`. If a trip lasts longer than 30 seconds, a 30-second video preview is saved first as `input-trip-1-preview.mp4`. It starts 20 seconds before the highest recorded RPM, shifted as needed to fit within the trip. This requires `ffmpeg` with `libx264` on `PATH`. Existing reports, GPX tracks, and charts are still generated.
 
 ```bash
-cargo run --release -- file.csv --trips --offline --overlay --overlay-fps 60 --overlay-size 1920x512 --redline-rpm 10000
+rideology2gpx file.csv --trips --offline --overlay --overlay-fps 60 --overlay-size 1920x512 --redline-rpm 10000
 ```
 
 The default video is a 1920x512 instrument panel at 30 FPS, ready to position in an editor. `--overlay-fps` accepts 1–120 FPS; `--overlay-size` accepts even dimensions from 480x128 to 3840x2160. The panel is centered if the selected aspect ratio differs from the default. `--redline-rpm` sets the point where the horizontal RPM bar turns red (default 10000). Above it, the significant RPM digits flash between white and orange. `--temp-warning` sets the coolant warning threshold in °C (default 97); above it, significant temperature digits turn yellow. These options also enable video generation without `--overlay`.
@@ -42,7 +93,7 @@ A JPEG image of the Markdown report is also saved as `ride.export-report.jpg` (u
 
 Charts are saved beside the reports and honor `--output-dir` / `-o`. The input stem is preserved (for example, `ride.export.csv` produces `ride.export-trip-1.jpg` and `ride.export-trip-1-speed-distribution.jpg`). Trip numbering starts at 1. Files with matching names are replaced on subsequent runs; older charts with other trip numbers are not automatically deleted if detection settings change.
 
-Rendering uses Plotters and system fonts. On Debian/Ubuntu, building requires `pkg-config`, `libfreetype6-dev`, and `libfontconfig1-dev`; install a sans-serif font such as `fonts-dejavu-core` for rendering.
+Rendering uses Plotters and system fonts.
 
 
 A trip starts when wheel speed exceeds `--min-speed` (default: 3 km/h). Samples at or below that threshold count as stopped. A continuous observed stop lasting at least `--stop-seconds` (default: 120) splits trips. Shorter stops remain inside a trip, so ordinary traffic stops need not create new reports. Stop duration is measured from the first stopped sample to the current sample, including a resuming sample when checking the threshold.
@@ -61,6 +112,24 @@ By default, the CLI sends only the reported start and end coordinates to [Nomina
 Cache files are stored in `.rideology-cache/` under the current working directory (ignored by Git). They contain queried coordinates and area names, not whole ride traces. Set `RIDEOLOGY_GEOCODE_CACHE` to share a cache across working directories. Cached results do not expire automatically; delete `areas.json` to refresh names. `--offline` skips both cache reads and network lookups. When either endpoint area name is unavailable, the chart title uses the original CSV ride title plus the trip number, such as `Ride title #1 (2026-09-22)`. A custom or self-hosted reverse-geocoding endpoint can be selected with `NOMINATIM_URL` without changing the code.
 
 Location data: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), available under the ODbL.
+
+## Publish a version
+
+Run `python3 scripts/prepare_release.py` without arguments to see a suggested next tag. This only prints a suggestion: it does not change files or publish anything. With no existing tag, it suggests the first beta; after a beta it increments the beta number; after a stable release it suggests a patch release. You can choose a different version explicitly.
+
+Use English [Conventional Commit](https://www.conventionalcommits.org/en/v1.0.0/) subjects such as `feat: add a new option` or `fix: correct GPX timing`. The release preparation command collects these subjects since the previous tag into [CHANGELOG.md](CHANGELOG.md), updates `Cargo.toml` and `Cargo.lock`, and runs `cargo check` offline. It requires a clean working tree and Python 3.8 or newer.
+
+```bash
+python3 scripts/prepare_release.py 0.1.0-beta.1
+git diff                         # review version and changelog
+git add Cargo.toml Cargo.lock CHANGELOG.md
+git commit -m "chore: prepare v0.1.0-beta.1"
+git tag v0.1.0-beta.1
+git push origin HEAD
+git push origin v0.1.0-beta.1
+```
+
+The tag triggers the release workflow. It checks the version, builds four platform archives, verifies `--version` and `-V`, and publishes them with SHA-256 checksums. Tags with a suffix such as `-beta.1` create GitHub prereleases. The preparation command does not publish or push anything, so review the generated changelog before tagging.
 
 ## Verification
 

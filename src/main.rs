@@ -506,7 +506,7 @@ fn report_path(
     Ok(output)
 }
 
-const USAGE: &str = "Usage: rideology2gpx <ride.csv> [--trips] [--min-speed KM/H] [--stop-seconds SECONDS] [--offline] [--overlay] [--overlay-fps FPS] [--overlay-size WIDTHxHEIGHT] [--redline-rpm RPM] [--temp-warning C] [--output-dir DIRECTORY] [--date \"YYYY-MM-DD HH:MM:SS\"]";
+const USAGE: &str = "Usage: rideology2gpx <ride.csv> [--trips] [--min-speed KM/H] [--stop-seconds SECONDS] [--offline] [--overlay] [--overlay-fps FPS] [--overlay-size WIDTHxHEIGHT] [--redline-rpm RPM] [--temp-warning C] [--output-dir DIRECTORY] [--date \"YYYY-MM-DD HH:MM:SS\"]\n       rideology2gpx --version";
 
 fn run() -> Result<()> {
     let mut args = env::args_os().skip(1);
@@ -528,9 +528,13 @@ fn run() -> Result<()> {
     };
     while let Some(arg) = args.next() {
         match arg.to_str() {
+            Some("--version" | "-V") => {
+                println!("rideology2gpx {}", env!("CARGO_PKG_VERSION"));
+                return Ok(());
+            }
             Some("--help" | "-h") => {
                 println!(
-                    "{USAGE}\n\nPrint a text ride report and save .md, .txt, and per-trip GPX tracks and speed, RPM, and gear JPG charts beside the input CSV. Supports UTF-8 and Shift-JIS CSV exports.\n\n--trips                 Report each moving period separately.\n--min-speed KM/H        Movement threshold (default: 3; strictly greater).\n--stop-seconds SECONDS  Minimum stop separating trips (default: 120).\n--output-dir, -o DIR    Write all files in DIR; create it if needed.\n--date DATE[ TIME]      Recording start, YYYY-MM-DD[ HH:MM:SS]; default: today at 00:00:00 local. RFC3339 offsets accepted.\n--offline               Skip all location lookups (coordinates only).
+                    "{USAGE}\n\nPrint a text ride report and save .md, .txt, and per-trip GPX tracks and speed, RPM, and gear JPG charts beside the input CSV. Supports UTF-8 and Shift-JIS CSV exports.\n\n--version, -V           Print the binary version.\n--trips                 Report each moving period separately.\n--min-speed KM/H        Movement threshold (default: 3; strictly greater).\n--stop-seconds SECONDS  Minimum stop separating trips (default: 120).\n--output-dir, -o DIR    Write all files in DIR; create it if needed.\n--date DATE[ TIME]      Recording start, YYYY-MM-DD[ HH:MM:SS]; default: today at 00:00:00 local. RFC3339 offsets accepted.\n--offline               Skip all location lookups (coordinates only).
 --overlay               Write an MP4 instrument video with black background for each trip (requires ffmpeg/libx264).
 --overlay-fps FPS       Overlay frame rate (1-120; default: 30). Implies --overlay.
 --overlay-size WxH      Even video dimensions (default: 1920x512). Implies --overlay.

@@ -8,3 +8,5 @@
 /*.mp4
 !/AGENTS.md
 !/README.md
+!/CHANGELOG.md
+/scripts/__pycache__/

@@ -1,0 +1,126 @@
+name: Release binaries
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check tag and package version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, tomllib
+          version = tomllib.loads(pathlib.Path('Cargo.toml').read_text())['package']['version']
+          assert os.environ['RELEASE_TAG'] == f'v{version}', 'Tag does not match Cargo.toml version'
+          PY
+      - name: Install Rust target
+        shell: bash
+        run: rustup target add '${{ matrix.target }}'
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libfreetype6-dev libfontconfig1-dev
+      - name: Build
+        shell: bash
+        run: cargo build --locked --release --target '${{ matrix.target }}'
+      - name: Verify binary version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          binary="target/${{ matrix.target }}/release/rideology2gpx"
+          if [[ '${{ runner.os }}' == 'Windows' ]]; then binary="${binary}.exe"; fi
+          actual="$("$binary" --version)"
+          expected="rideology2gpx ${RELEASE_TAG#v}"
+          [[ "$actual" == "$expected" ]] || { echo "Expected $expected, got $actual" >&2; exit 1; }
+          [[ "$("$binary" -V)" == "$expected" ]]
+      - name: Package Unix binary
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p dist
+          tar -czf "dist/rideology2gpx-${RELEASE_TAG}-${{ matrix.target }}.tar.gz" \
+            -C 'target/${{ matrix.target }}/release' rideology2gpx
+      - name: Package Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path 'target/${{ matrix.target }}/release/rideology2gpx.exe' -DestinationPath "dist/rideology2gpx-$env:RELEASE_TAG-${{ matrix.target }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: dist
+          merge-multiple: true
+      - name: Create checksums
+        run: cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS.txt
+      - name: Read changelog entry
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          version = os.environ['RELEASE_TAG'].removeprefix('v')
+          text = Path('CHANGELOG.md').read_text()
+          heading = f'## [{version}]'
+          start = text.find(heading + '\n')
+          if start < 0:
+              raise SystemExit(f'Missing changelog entry for {version}')
+          start += len(heading) + 1
+          end = text.find('\n## [', start)
+          notes = text[start:end if end >= 0 else None].strip()
+          if not notes:
+              raise SystemExit(f'Empty changelog entry for {version}')
+          Path('RELEASE_NOTES.md').write_text(notes + '\n')
+          PY
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          options=(--verify-tag --notes-file RELEASE_NOTES.md)
+          if [[ "$RELEASE_TAG" == *-* ]]; then options+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" dist/* "${options[@]}"
