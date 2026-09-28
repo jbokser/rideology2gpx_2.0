@@ -1,6 +1,7 @@
 mod charts;
 mod geocoding;
 mod gpx;
+mod map;
 mod overlay;
 mod report_image;
 
@@ -21,6 +22,23 @@ struct Sample {
     area: Option<String>,
 }
 
+const REQUIRED_COLUMNS: [&str; 7] = [
+    "elapsed_msec",
+    "gps_latitude",
+    "gps_longitude",
+    "engine_RPM",
+    "wheel_speed(km/h)",
+    "water_temperature",
+    "gear_position",
+];
+
+fn column_index(header: &csv::StringRecord, name: &str) -> Option<usize> {
+    header.iter().position(|value| {
+        let value = value.trim();
+        value == name || (name == "water_temperature" && value.starts_with("water_temperature("))
+    })
+}
+
 fn read_ride(bytes: &[u8]) -> Result<(String, Vec<Sample>)> {
     let text = match std::str::from_utf8(bytes) {
         Ok(text) => text.trim_start_matches('\u{feff}').to_owned(),
@@ -36,36 +54,64 @@ fn read_ride(bytes: &[u8]) -> Result<(String, Vec<Sample>)> {
         .has_headers(false)
         .flexible(true)
         .from_reader(text.as_bytes());
+    let rows = reader.records().collect::<csv::Result<Vec<_>>>()?;
+    let header_index = rows
+        .iter()
+        .enumerate()
+        .max_by_key(|(index, row)| {
+            (
+                REQUIRED_COLUMNS
+                    .iter()
+                    .filter(|name| column_index(row, name).is_some())
+                    .count(),
+                std::cmp::Reverse(*index),
+            )
+        })
+        .and_then(|(index, row)| {
+            REQUIRED_COLUMNS
+                .iter()
+                .any(|name| column_index(row, name).is_some())
+                .then_some(index)
+        });
+    let header = header_index.and_then(|index| rows.get(index));
+    let positions = REQUIRED_COLUMNS.map(|name| header.and_then(|row| column_index(row, name)));
+    let missing: Vec<_> = REQUIRED_COLUMNS
+        .iter()
+        .zip(positions)
+        .filter_map(|(name, position)| position.is_none().then_some(*name))
+        .collect();
+    if !missing.is_empty() {
+        return Err(format!("Missing required CSV columns: {}", missing.join(", ")).into());
+    }
+    let positions = positions.map(Option::unwrap);
+    let header_index = header_index.unwrap();
     let mut title = "Ride report".to_owned();
-    let mut header: Option<csv::StringRecord> = None;
+    for row in &rows[..header_index] {
+        if row.get(0) == Some("Title") {
+            title = row.get(1).unwrap_or("Ride report").to_owned();
+        }
+    }
     let mut samples = Vec::new();
-    for (index, record) in reader.records().enumerate() {
-        let row = record?;
-        if header.is_none() {
-            if row.get(0) == Some("Title") {
-                title = row.get(1).unwrap_or("Ride report").to_owned();
-            }
-            if row.get(0) == Some("elapsed_msec") {
-                header = Some(row);
-            }
+    for (index, row) in rows.iter().enumerate().skip(header_index + 1) {
+        if row.iter().all(|value| value.trim().is_empty()) {
             continue;
         }
-        let headers = header.as_ref().unwrap();
-        if row.len() != headers.len() {
-            return Err(format!("Record {}: wrong number of columns", index + 1).into());
-        }
-        let field = |name: &str| -> Result<&str> {
-            let col = headers
-                .iter()
-                .position(|h| {
-                    h == name
-                        || (name == "water_temperature" && h.starts_with("water_temperature("))
+        let field = |column: usize| -> Result<&str> {
+            row.get(positions[column])
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    format!(
+                        "Record {}: missing value for {}",
+                        index + 1,
+                        REQUIRED_COLUMNS[column]
+                    )
+                    .into()
                 })
-                .ok_or_else(|| format!("Missing column: {name}"))?;
-            Ok(row.get(col).unwrap().trim())
         };
-        let number = |name: &str| -> Result<f64> {
-            let value: f64 = field(name)?
+        let number = |column: usize| -> Result<f64> {
+            let name = REQUIRED_COLUMNS[column];
+            let value: f64 = field(column)?
                 .parse()
                 .map_err(|_| format!("Record {}: invalid {name}", index + 1))?;
             if !value.is_finite() {
@@ -74,13 +120,13 @@ fn read_ride(bytes: &[u8]) -> Result<(String, Vec<Sample>)> {
             Ok(value)
         };
         let sample = Sample {
-            ms: number("elapsed_msec")?,
-            lat: number("gps_latitude")?,
-            lon: number("gps_longitude")?,
-            rpm: number("engine_RPM")?,
-            speed: number("wheel_speed(km/h)")?,
-            temp: number("water_temperature")?,
-            gear: field("gear_position")?.to_owned(),
+            ms: number(0)?,
+            lat: number(1)?,
+            lon: number(2)?,
+            rpm: number(3)?,
+            speed: number(4)?,
+            temp: number(5)?,
+            gear: field(6)?.to_owned(),
             area: None,
         };
         if sample.ms < 0.0
@@ -506,7 +552,18 @@ fn report_path(
     Ok(output)
 }
 
-const USAGE: &str = "Usage: rideology2gpx <ride.csv> [--trips] [--min-speed KM/H] [--stop-seconds SECONDS] [--offline] [--overlay] [--overlay-fps FPS] [--overlay-size WIDTHxHEIGHT] [--redline-rpm RPM] [--temp-warning C] [--output-dir DIRECTORY] [--date \"YYYY-MM-DD HH:MM:SS\"]\n       rideology2gpx --version";
+const USAGE: &str = "Usage: rideology2gpx [OPTIONS] [CSV_FILE]";
+
+fn print_help() {
+    println!(
+        "{USAGE}\n\n  Transform Kawasaki Rideology CSV exports into GPX tracks, reports, and route maps.\n\n  CSV_FILE - File exported by the Kawasaki Rideology App. Required unless\n             showing help or version.\n  Output files are saved beside the CSV unless --output-dir is given.\n\n  For more info: https://github.com/jbokser/rideology2gpx_2.0\n  Author: Juan S. Bokser <juan.bokser@gmail.com>\n  Version: {}\n",
+        env!("CARGO_PKG_VERSION")
+    );
+    println!(
+        "Options:\n  -V, --version          Show version and exit.\n  -h, --help             Show this message and exit.\n  -o, --output-dir DIR   Write output files in DIR; create it if needed.\n      --date DATE        Recording start: YYYY-MM-DD[ HH:MM:SS] or RFC3339.\n                          Default: today at 00:00:00 local time.\n      --trips            Split reports and exports by moving period.\n      --min-speed KM/H   Movement threshold (default: 3; strictly greater).\n                          Also filters average and median speed.\n      --stop-seconds SEC Minimum stop separating trips (default: 120).\n                          Requires --trips; gaps split trips only in that mode.\n      --offline          Skip location lookups; draw maps without streets.\n      --overlay          Write an MP4 instrument video for each trip.\n                          Requires ffmpeg with libx264.\n      --overlay-fps FPS  Video frame rate (1-120; default: 30).\n      --overlay-size WxH Even video dimensions (default: 1920x512).\n      --redline-rpm RPM  RPM where the bar turns red (default: 10000).\n      --temp-warning C   Temperature warning in °C (default: 97).\n\n  Video settings imply --overlay. Online mode sends endpoint coordinates to\n  Nominatim and caches area names."
+    );
+    println!("\n{}", geocoding::ATTRIBUTION);
+}
 
 fn run() -> Result<()> {
     let mut args = env::args_os().skip(1);
@@ -533,15 +590,7 @@ fn run() -> Result<()> {
                 return Ok(());
             }
             Some("--help" | "-h") => {
-                println!(
-                    "{USAGE}\n\nPrint a text ride report and save .md, .txt, and per-trip GPX tracks and speed, RPM, and gear JPG charts beside the input CSV. Supports UTF-8 and Shift-JIS CSV exports.\n\n--version, -V           Print the binary version.\n--trips                 Report each moving period separately.\n--min-speed KM/H        Movement threshold (default: 3; strictly greater).\n--stop-seconds SECONDS  Minimum stop separating trips (default: 120).\n--output-dir, -o DIR    Write all files in DIR; create it if needed.\n--date DATE[ TIME]      Recording start, YYYY-MM-DD[ HH:MM:SS]; default: today at 00:00:00 local. RFC3339 offsets accepted.\n--offline               Skip all location lookups (coordinates only).
---overlay               Write an MP4 instrument video with black background for each trip (requires ffmpeg/libx264).
---overlay-fps FPS       Overlay frame rate (1-120; default: 30). Implies --overlay.
---overlay-size WxH      Even video dimensions (default: 1920x512). Implies --overlay.
---redline-rpm RPM      RPM where the bar turns red (default: 10000). Implies --overlay.
---temp-warning C       Temperature warning threshold in °C (default: 97). Implies --overlay.\n\nOnline mode sends report endpoint coordinates to Nominatim and caches area names.\n\n--stop-seconds requires --trips. --min-speed also filters average and median speed. Recording gaps always split trips."
-                );
-                println!("\n{}", geocoding::ATTRIBUTION);
+                print_help();
                 return Ok(());
             }
             Some("--date") => {
@@ -653,12 +702,19 @@ fn run() -> Result<()> {
     if let Some(parent) = destination.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
     }
-    let chart_ranges = trips(&samples, min_speed, stop_seconds);
+    let chart_ranges = if per_trip {
+        trips(&samples, min_speed, stop_seconds)
+    } else if samples.iter().any(|sample| sample.speed > min_speed) {
+        std::iter::once(0..samples.len()).collect()
+    } else {
+        Vec::new()
+    };
     if !offline {
-        let mut ranges = chart_ranges.clone();
-        if !per_trip {
-            ranges.push(0..samples.len());
-        }
+        let ranges = if per_trip {
+            chart_ranges.clone()
+        } else {
+            std::iter::once(0..samples.len()).collect()
+        };
         let endpoints: std::collections::BTreeSet<_> =
             ranges.iter().flat_map(|r| [r.start, r.end - 1]).collect();
         if !endpoints.is_empty() {
@@ -694,7 +750,8 @@ fn run() -> Result<()> {
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."));
     for (i, range) in chart_ranges.iter().enumerate() {
-        let chart_path = charts::chart_path(&path, chart_directory, i + 1)?;
+        let trip_number = per_trip.then_some(i + 1);
+        let chart_path = charts::chart_path(&path, chart_directory, trip_number)?;
         if chart_path.exists() && fs::canonicalize(&chart_path)? == fs::canonicalize(&path)? {
             return Err("Chart path must not overwrite the input file".into());
         }
@@ -715,21 +772,36 @@ fn run() -> Result<()> {
             &chart_path,
             &samples[range.clone()],
             &title,
-            i + 1,
+            trip_number,
             &chart_date,
         )?;
         eprintln!("Chart saved to {}", chart_path.display());
-        let distribution_path = charts::distribution_path(&path, chart_directory, i + 1)?;
+        let distribution_path = charts::distribution_path(&path, chart_directory, trip_number)?;
         charts::write_distribution_chart(
             &distribution_path,
             &samples[range.clone()],
             &title,
-            i + 1,
+            trip_number,
             &chart_date,
         )?;
         eprintln!("Distribution saved to {}", distribution_path.display());
+        let map_path = map::path(&path, chart_directory, trip_number)?;
+        if map_path.exists() && fs::canonicalize(&map_path)? == fs::canonicalize(&path)? {
+            return Err("Map path must not overwrite the input file".into());
+        }
+        if let Some(error) = map::write(
+            &map_path,
+            &samples[range.clone()],
+            &title,
+            trip_number,
+            &chart_date,
+            offline,
+        )? {
+            eprintln!("Warning: map tiles unavailable; drawing route without streets: {error}");
+        }
+        eprintln!("Map saved to {}", map_path.display());
         if video {
-            let video_path = overlay::path(&path, chart_directory, i + 1)?;
+            let video_path = overlay::path(&path, chart_directory, trip_number)?;
             overlay::write(&video_path, &samples[range.clone()], &video_options)?;
             eprintln!("Overlay saved to {}", video_path.display());
         }
@@ -747,7 +819,10 @@ fn run() -> Result<()> {
     fs::write(&text_destination, &output)?;
     {
         use std::io::Write;
-        std::io::stdout().lock().write_all(output.as_bytes())?;
+        let mut stdout = std::io::stdout().lock();
+        stdout.write_all(b"\n")?;
+        stdout.write_all(output.as_bytes())?;
+        stdout.write_all(b"\n")?;
     }
     eprintln!(
         "Reports saved to {} and {}",
@@ -779,6 +854,48 @@ mod tests {
             gear: "1".into(),
             area: None,
         }
+    }
+
+    #[test]
+    fn csv_accepts_variable_metadata_and_optional_columns() {
+        let csv = "Export format,2\nDevice,Kawasaki\nTitle,Ida y vuelta\nNote,extra metadata\nfuture,gear_position,elapsed_msec,gps_longitude,engine_RPM,gps_latitude,wheel_speed(km/h),water_temperature(C),unused\na,1,0,-58.0,1000,-34.0,10,90\nb,2,1000,-58.1,2000,-34.1,20,91,extra\n\n";
+        let (title, samples) = read_ride(csv.as_bytes()).unwrap();
+        assert_eq!(title, "Ida y vuelta");
+        assert_eq!(samples.len(), 2);
+        assert_eq!(samples[0].gear, "1");
+        assert_eq!(samples[1].ms, 1000.0);
+        assert_eq!(samples[1].lat, -34.1);
+        assert_eq!(samples[1].speed, 20.0);
+    }
+
+    #[test]
+    fn csv_reports_all_missing_required_columns() {
+        let csv = "Title,Short ride\nelapsed_msec,gps_latitude,extra\n0,-34,anything\n";
+        let error = read_ride(csv.as_bytes()).unwrap_err().to_string();
+        for name in [
+            "gps_longitude",
+            "engine_RPM",
+            "wheel_speed(km/h)",
+            "water_temperature",
+            "gear_position",
+        ] {
+            assert!(error.contains(name), "{error}");
+        }
+        assert!(!error.contains("Missing required CSV columns: elapsed_msec"));
+        let error = read_ride(b"Title,Short ride\n").unwrap_err().to_string();
+        for name in REQUIRED_COLUMNS {
+            assert!(error.contains(name), "{error}");
+        }
+    }
+
+    #[test]
+    fn csv_reports_missing_required_values_in_short_rows() {
+        let csv = "elapsed_msec,gps_latitude,gps_longitude,engine_RPM,wheel_speed(km/h),water_temperature(C),gear_position,unused\n0,0,0,1000,10,90,1\n1000,0,0,1000,10,90\n";
+        let error = read_ride(csv.as_bytes()).unwrap_err().to_string();
+        assert!(
+            error.contains("Record 3: missing value for gear_position"),
+            "{error}"
+        );
     }
 
     #[test]
@@ -822,12 +939,12 @@ mod tests {
 
     #[test]
     fn trips_have_one_shared_heading() {
-        let (title, samples) = read_ride(include_bytes!("../tigre.csv")).unwrap();
+        let (title, samples) = read_ride(include_bytes!("../example/ride.csv")).unwrap();
         let text = trip_reports(&title, &samples, 3.0, 120.0);
         assert!(text.starts_with(&heading(&title)));
         assert_eq!(text.matches(&title).count(), 1);
         assert!(!text.contains(" - Trip"));
-        assert_eq!(text.matches("Elapsed range:").count(), 3);
+        assert_eq!(text.matches("Elapsed range:").count(), 2);
     }
 
     #[test]
@@ -867,10 +984,10 @@ mod tests {
     }
 
     #[test]
-    fn sample_export_has_three_main_trips() {
-        let (_, samples) = read_ride(include_bytes!("../tigre.csv")).unwrap();
+    fn sample_export_has_two_main_trips() {
+        let (_, samples) = read_ride(include_bytes!("../example/ride.csv")).unwrap();
         let ranges = trips(&samples, 3.0, 120.0);
-        assert_eq!(ranges.len(), 3);
+        assert_eq!(ranges.len(), 2);
         let boundaries: Vec<_> = ranges
             .iter()
             .map(|r| {
@@ -883,12 +1000,11 @@ mod tests {
         assert_eq!(
             boundaries,
             vec![
-                ("0:02:06".into(), "0:06:08".into()),
-                ("0:27:42".into(), "0:42:38".into()),
-                ("1:57:47".into(), "2:23:54".into())
+                ("0:01:52".into(), "0:03:41".into()),
+                ("0:03:47".into(), "0:06:04".into())
             ]
         );
-        assert_eq!(trips(&samples, 3.0, 60.0).len(), 4);
+        assert_eq!(trips(&samples, 3.0, 60.0).len(), 2);
     }
 
     #[test]
@@ -920,26 +1036,26 @@ mod tests {
     }
 
     #[test]
-    fn real_shift_jis_export() {
-        let (title, samples) = read_ride(include_bytes!("../tigre.csv")).unwrap();
-        assert_eq!(title, "Ida y vuelta a tigre");
-        assert_eq!(samples.len(), 3324);
+    fn example_ride_export() {
+        let (title, samples) = read_ride(include_bytes!("../example/ride.csv")).unwrap();
+        assert_eq!(title, "From gas station to next gas station");
+        assert_eq!(samples.len(), 460);
         let text = report(&title, &samples, 3.0);
-        assert!(text.contains("10815 rpm"));
-        assert!(text.contains("190 km/h"));
-        assert!(text.contains("2:36:12"));
-        assert!(text.contains("W058°30′47.94″"));
+        assert!(text.contains("3846 rpm"));
+        assert!(text.contains("60 km/h"));
+        assert!(text.contains("0:07:49"));
+        assert!(text.contains("W058°28′46.70″"));
     }
 
     #[test]
     fn rejects_missing_and_invalid_data() {
         assert!(read_ride(b"Title,Empty\n").is_err());
-        let original = fs::read("tigre.csv").unwrap();
-        let (decoded, _, _) = encoding_rs::SHIFT_JIS.decode(&original);
+        let original = fs::read("example/ride.csv").unwrap();
+        let decoded = std::str::from_utf8(&original).unwrap();
         assert!(
             read_ride(
                 decoded
-                    .replace("91,-34.535473", "NaN,-34.535473")
+                    .replacen("940,-34.5082", "NaN,-34.5082", 1)
                     .as_bytes()
             )
             .is_err()
@@ -947,7 +1063,7 @@ mod tests {
         assert!(
             read_ride(
                 decoded
-                    .replace("1091,-34.535473", "91,-34.535473")
+                    .replacen("1940,-34.5082", "940,-34.5082", 1)
                     .as_bytes()
             )
             .is_err()

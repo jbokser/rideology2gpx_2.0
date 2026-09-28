@@ -16,9 +16,9 @@ pub struct Options {
     pub temp_warning_c: f64,
 }
 
-pub fn path(input: &Path, directory: &Path, trip: usize) -> Result<PathBuf> {
+pub fn path(input: &Path, directory: &Path, trip: Option<usize>) -> Result<PathBuf> {
     let mut name = OsString::from(input.file_stem().ok_or("Input path has no file stem")?);
-    name.push(format!("-trip-{trip}.mp4"));
+    name.push(trip.map_or_else(|| ".mp4".to_owned(), |trip| format!("-trip-{trip}.mp4")));
     Ok(directory.join(name))
 }
 
@@ -455,7 +455,7 @@ fn render(
         }
         if let Some(up) = shift {
             let since_change = at - samples[index].ms;
-            if (since_change / 125.0).floor() as u32 % 2 == 0 {
+            if ((since_change / 125.0).floor() as u32).is_multiple_of(2) {
                 shift_triangle(&mut c, x(863.0), y(82.0), up, scale, white);
             }
         }
@@ -466,17 +466,17 @@ fn render(
             size(9.0).max(1),
             if gear == "N" { green } else { white },
         );
-        if frame == preview_frame {
-            if let Some(preview_path) = preview_image {
-                image::save_buffer_with_format(
-                    preview_path,
-                    &c.data,
-                    options.width,
-                    options.height,
-                    image::ColorType::Rgb8,
-                    image::ImageFormat::Jpeg,
-                )?;
-            }
+        if frame == preview_frame
+            && let Some(preview_path) = preview_image
+        {
+            image::save_buffer_with_format(
+                preview_path,
+                &c.data,
+                options.width,
+                options.height,
+                image::ColorType::Rgb8,
+                image::ImageFormat::Jpeg,
+            )?;
         }
         stdin
             .write_all(&c.data)

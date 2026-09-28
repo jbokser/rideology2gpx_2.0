@@ -20,7 +20,7 @@ impl Workspace {
         fs::create_dir_all(path.join("rides with spaces")).unwrap();
         fs::write(
             path.join("rides with spaces/trip.export.csv"),
-            include_bytes!("../tigre.csv"),
+            include_bytes!("../example/ride.csv"),
         )
         .unwrap();
         Self(path)
@@ -56,6 +56,24 @@ fn version_flags_match_package_version_without_input() {
 }
 
 #[test]
+fn help_describes_current_interface_and_project() {
+    let workspace = Workspace::new();
+    let long = workspace.run(&["--help"]);
+    let short = workspace.run(&["-h"]);
+    assert!(long.status.success());
+    assert!(short.status.success());
+    assert_eq!(long.stdout, short.stdout);
+    let help = String::from_utf8(long.stdout).unwrap();
+    assert!(help.starts_with("Usage: rideology2gpx [OPTIONS] [CSV_FILE]\n"));
+    assert!(help.contains("Author: Juan S. Bokser <juan.bokser@gmail.com>"));
+    assert!(help.contains(&format!("Version: {}", env!("CARGO_PKG_VERSION"))));
+    assert!(help.contains("-V, --version"));
+    assert!(help.contains("-o, --output-dir DIR"));
+    assert!(help.contains("--overlay-size WxH"));
+    assert!(!help.contains("--starting-chop"));
+}
+
+#[test]
 fn writes_markdown_and_text_beside_input_and_matches_stdout() {
     let workspace = Workspace::new();
     let input = workspace.0.join("rides with spaces/trip.export.csv");
@@ -68,16 +86,20 @@ fn writes_markdown_and_text_beside_input_and_matches_stdout() {
     );
     assert_eq!(
         result.stdout,
-        fs::read(input.with_extension("txt")).unwrap()
+        format!(
+            "\n{}\n",
+            fs::read_to_string(input.with_extension("txt")).unwrap()
+        )
+        .into_bytes()
     );
     assert!(String::from_utf8_lossy(&result.stdout).contains("Max for each gear"));
     assert!(!String::from_utf8_lossy(&result.stdout).contains("Reports saved"));
     let report = fs::read_to_string(input.with_extension("md")).unwrap();
-    assert!(report.starts_with("# Ida y vuelta a tigre\n\n"));
-    assert_eq!(report.matches("## Trip ").count(), 3);
+    assert!(report.starts_with("# From gas station to next gas station\n\n"));
+    assert_eq!(report.matches("## Trip ").count(), 2);
     assert_eq!(report.matches("## Max for each gear").count(), 1);
-    assert!(report.contains("| Median speed | 80 km/h |"));
-    assert!(report.contains("| 6 | 8914 | 190 |"));
+    assert!(report.contains("| Median speed | 36 km/h |"));
+    assert!(report.contains("| 4 | 3846 | 60 |"));
     assert!(
         input
             .parent()
@@ -85,12 +107,19 @@ fn writes_markdown_and_text_beside_input_and_matches_stdout() {
             .join("trip.export-report.jpg")
             .exists()
     );
-    for trip in 1..=3 {
+    for trip in 1..=2 {
         let jpg = input
             .parent()
             .unwrap()
             .join(format!("trip.export-trip-{trip}.jpg"));
         assert!(jpg.with_extension("gpx").exists());
+        assert!(
+            input
+                .parent()
+                .unwrap()
+                .join(format!("trip.export-trip-{trip}-map.jpg"))
+                .exists()
+        );
         assert!(
             input
                 .parent()
@@ -104,6 +133,70 @@ fn writes_markdown_and_text_beside_input_and_matches_stdout() {
         assert_eq!((decoded.width(), decoded.height()), (1400, 1100));
     }
     assert_eq!(fs::read(input).unwrap(), original);
+}
+
+#[test]
+fn default_export_keeps_the_recording_in_one_file() {
+    let workspace = Workspace::new();
+    let result = workspace.run(&[
+        "rides with spaces/trip.export.csv",
+        "--offline",
+        "--output-dir",
+        "whole-ride",
+    ]);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let output = workspace.0.join("whole-ride");
+    let report = fs::read_to_string(output.join("trip.export.md")).unwrap();
+    assert!(!report.contains("Detected trips:"));
+    assert!(!report.contains("## Trip 2"));
+    let gpx = fs::read_to_string(output.join("trip.export.gpx")).unwrap();
+    assert_eq!(gpx.matches("<trkpt ").count(), 460);
+    assert!(output.join("trip.export.jpg").exists());
+    assert!(output.join("trip.export-map.jpg").exists());
+    assert!(!output.join("trip.export-trip-1-map.jpg").exists());
+    assert!(output.join("trip.export-speed-distribution.jpg").exists());
+    assert!(!output.join("trip.export-trip-1.gpx").exists());
+    assert!(!output.join("trip.export-trip-1.jpg").exists());
+}
+
+#[test]
+fn offline_maps_use_ride_and_trip_names_without_tile_cache() {
+    let workspace = Workspace::new();
+    let csv = "Title,Map example\nelapsed_msec,gps_latitude,gps_longitude,engine_RPM,wheel_speed(km/h),water_temperature(C),gear_position\n0,-34.0,-58.0,1000,10,90,1\n1000,-34.0,-57.9999,1000,10,90,1\n100000,-34.01,-58.01,1000,10,90,1\n101000,-34.01,-58.0099,1000,10,90,1\n";
+    fs::write(workspace.0.join("map.csv"), csv).unwrap();
+    let cache = workspace.0.join("tiles-should-not-exist");
+    for (arguments, names) in [
+        (
+            vec!["map.csv", "--offline", "-o", "whole"],
+            vec!["map-map.jpg"],
+        ),
+        (
+            vec!["map.csv", "--offline", "--trips", "-o", "parts"],
+            vec!["map-trip-1-map.jpg", "map-trip-2-map.jpg"],
+        ),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rideology2gpx"))
+            .current_dir(&workspace.0)
+            .env("RIDEOLOGY_MAP_CACHE", &cache)
+            .args(&arguments)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let directory = workspace.0.join(arguments.last().unwrap());
+        for name in names {
+            let image = image::open(directory.join(name)).unwrap();
+            assert_eq!((image.width(), image.height()), (1024, 768));
+        }
+    }
+    assert!(!cache.exists());
 }
 
 #[test]
@@ -122,8 +215,12 @@ fn creates_output_directories_and_replaces_previous_reports() {
     let result = workspace.run(&args);
     assert!(result.status.success());
     assert_eq!(
-        fs::read(output.with_extension("txt")).unwrap(),
-        result.stdout
+        result.stdout,
+        format!(
+            "\n{}\n",
+            fs::read_to_string(output.with_extension("txt")).unwrap()
+        )
+        .into_bytes()
     );
     assert!(
         fs::read_to_string(output)
@@ -145,11 +242,12 @@ fn creates_output_directories_and_replaces_previous_reports() {
     assert!(absolute_dir.join("trip.export.md").exists());
     assert!(absolute_dir.join("trip.export.txt").exists());
     assert!(absolute_dir.join("trip.export-report.jpg").exists());
-    assert!(absolute_dir.join("trip.export-trip-3.jpg").exists());
+    assert!(absolute_dir.join("trip.export.jpg").exists());
+    assert!(!absolute_dir.join("trip.export-trip-2.jpg").exists());
     assert!(
         workspace
             .0
-            .join("reports/nested folder/trip.export-trip-1.jpg")
+            .join("reports/nested folder/trip.export.jpg")
             .exists()
     );
 }
@@ -186,15 +284,18 @@ fn rejects_invalid_destinations_and_preserves_input() {
             .success()
     );
     let input = workspace.0.join("input.md");
-    fs::write(&input, include_bytes!("../tigre.csv")).unwrap();
+    fs::write(&input, include_bytes!("../example/ride.csv")).unwrap();
     assert!(!workspace.run(&["input.md", "--offline"]).status.success());
-    assert_eq!(fs::read(input).unwrap(), include_bytes!("../tigre.csv"));
+    assert_eq!(
+        fs::read(input).unwrap(),
+        include_bytes!("../example/ride.csv")
+    );
     let text_input = workspace.0.join("other.txt");
-    fs::write(&text_input, include_bytes!("../tigre.csv")).unwrap();
+    fs::write(&text_input, include_bytes!("../example/ride.csv")).unwrap();
     assert!(!workspace.run(&["other.txt", "--offline"]).status.success());
     assert_eq!(
         fs::read(text_input).unwrap(),
-        include_bytes!("../tigre.csv")
+        include_bytes!("../example/ride.csv")
     );
     assert!(!workspace.0.join("other.md").exists());
 }
@@ -266,6 +367,7 @@ fn gpx_uses_recording_time_across_trips_and_freezes_stopped_points() {
     let result = workspace.run(&[
         "timed.csv",
         "--offline",
+        "--trips",
         "--date",
         "2026-09-22T23:59:59-03:00",
     ]);
@@ -346,7 +448,7 @@ fn overlay_is_mp4_and_uses_elapsed_timestamps() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let video = workspace.0.join("video-trip-1.mp4");
+    let video = workspace.0.join("video.mp4");
     let probe = Command::new("ffprobe")
         .args([
             "-v",
@@ -367,11 +469,11 @@ fn overlay_is_mp4_and_uses_elapsed_timestamps() {
     assert!(info.contains("nb_frames=11"), "{info}");
     assert!(info.contains("width=1920"), "{info}");
     assert!(info.contains("height=512"), "{info}");
-    assert!(workspace.0.join("video-trip-1.jpg").exists());
-    let preview = image::open(workspace.0.join("video-trip-1-preview.jpg")).unwrap();
+    assert!(workspace.0.join("video.jpg").exists());
+    let preview = image::open(workspace.0.join("video-preview.jpg")).unwrap();
     assert_eq!((preview.width(), preview.height()), (1920, 512));
-    assert!(!workspace.0.join("video-trip-1-preview.mp4").exists());
-    assert!(workspace.0.join("video-trip-1.gpx").exists());
+    assert!(!workspace.0.join("video-preview.mp4").exists());
+    assert!(workspace.0.join("video.gpx").exists());
 }
 
 #[test]
@@ -397,10 +499,8 @@ fn long_overlay_writes_preview_video_before_full_video() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.find("long-trip-1-preview.mp4").unwrap() < stderr.find("long-trip-1.mp4").unwrap()
-    );
-    let preview = workspace.0.join("long-trip-1-preview.mp4");
+    assert!(stderr.find("long-preview.mp4").unwrap() < stderr.find("long.mp4").unwrap());
+    let preview = workspace.0.join("long-preview.mp4");
     let probe = Command::new("ffprobe")
         .args([
             "-v",
@@ -419,8 +519,8 @@ fn long_overlay_writes_preview_video_before_full_video() {
     assert!(info.contains("nb_frames=30"), "{info}");
     assert!(info.contains("width=480"), "{info}");
     assert!(info.contains("height=128"), "{info}");
-    assert!(workspace.0.join("long-trip-1.mp4").exists());
-    assert!(workspace.0.join("long-trip-1-preview.jpg").exists());
+    assert!(workspace.0.join("long.mp4").exists());
+    assert!(workspace.0.join("long-preview.jpg").exists());
 }
 
 #[test]

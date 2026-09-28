@@ -1,6 +1,9 @@
 # **$ rideology2gpx**
 
-Convert Kawasaki Rideology `.csv` exports into `.gpx` tracks, text and Markdown reports, and JPEG charts. Optional instrument videos require FFmpeg.
+A simple command line program that convert Kawasaki Rideology `.csv` exports into `.gpx` tracks, `.txt` and `.md` reports, and `.jpg` charts. Optional instrument videos require _FFmpeg_.
+
+![](docs/logo.jpg)
+
 
 ## Download
 
@@ -20,7 +23,7 @@ Replace `[VERSION]` with the release number shown on GitHub. For beta releases, 
 Extract the archive and put the executable in a directory on your `PATH`. On Linux and macOS, for example:
 
 ```bash
-tar -xzf rideology2gpx-vVERSION-*.tar.gz
+tar -xzf rideology2gpx-v[VERSION]-*.tar.gz
 mkdir -p "$HOME/.local/bin"
 mv rideology2gpx "$HOME/.local/bin/"
 rideology2gpx --version
@@ -48,7 +51,21 @@ rideology2gpx --help
 rideology2gpx --version
 ```
 
-Quote paths containing spaces. By default, outputs are saved beside the CSV. `--output-dir` writes them to another directory and creates it if necessary. The command prints the text report to standard output. It writes Markdown and text reports, GPX tracks, and JPEG charts; `--overlay` also produces MP4 videos. Online mode looks up endpoint area names using Nominatim. Use `--offline` to skip location lookups.
+The importer finds required columns by name, so extra columns, reordered columns, and a different number of metadata lines are accepted. If a required column is absent, the error lists every missing column.
+
+Quote paths containing spaces. By default, outputs are saved beside the CSV. `--output-dir` writes them to another directory and creates it if necessary. The command prints the text report to standard output; the saved `.txt` file contains only the report. It writes Markdown and text reports, one GPX file such as `ride.gpx`, and JPEG charts; `--overlay` also produces an MP4 video. Add `--trips` to split the report and exported files by moving period. Online mode looks up endpoint area names using Nominatim. Use `--offline` to skip location lookups.
+
+## Route maps
+
+Each exported route also gets a map image: `ride-map.jpg` in normal mode or `ride-trip-1-map.jpg`, etc. with `--trips`. It shows the route and start/end markers. In online mode, the background uses OpenStreetMap tiles and the image includes OpenStreetMap attribution. This sends the approximate ride area to the tile server. Only tiles for the requested image and zoom are fetched; requests are sequential and cached for at least seven days in `.rideology-cache/tiles`. Set `RIDEOLOGY_MAP_CACHE` to use another cache directory. `RIDEOLOGY_MAP_TILE_URL` can select an HTTPS OpenStreetMap-compatible tile source with `{z}`, `{x}`, and `{y}` placeholders.
+
+With `--offline`, the map is drawn locally on a plain grid. It does not request or read OpenStreetMap tiles or use Nominatim. If online tiles are unavailable, the program warns and saves this plain map instead.
+
+## Project history and author
+
+This Rust project replaces the original [rideology2gpx Python program](https://github.com/jbokser/rideology2gpx), which is why this repository is named `rideology2gpx_2.0`.
+
+Author: **Juan S. Bokser** ([GitHub](https://github.com/jbokser), [email](mailto:juan.bokser@gmail.com)). This Rust version was made 100% through vibe coding with OpenAI Codex under his direction.
 
 ## Build from source
 
@@ -75,7 +92,7 @@ Trip boundaries prevent interpolation across missing telemetry. The fitted traje
 
 [Watch the sample video (MP4)](docs/preview.mp4). The image above links to the same video.
 
-Add `--overlay` to export an H.264 `.mp4` with a black background for each detected trip. The videos are saved beside the GPX and JPG files as `input-trip-1.mp4`, etc. A full-size middle-frame image is saved as `input-trip-1-preview.jpg`. If a trip lasts longer than 30 seconds, a 30-second video preview is saved first as `input-trip-1-preview.mp4`. It starts 20 seconds before the highest recorded RPM, shifted as needed to fit within the trip. This requires `ffmpeg` with `libx264` on `PATH`. Existing reports, GPX tracks, and charts are still generated.
+Add `--overlay` to export an H.264 `.mp4` with a black background for each exported route. Without `--trips`, the video is saved beside the GPX and JPG files as `input.mp4`, with `input-preview.jpg` and, for a ride longer than 30 seconds, `input-preview.mp4`. With `--trips`, the files use names such as `input-trip-1.mp4` and `input-trip-1-preview.jpg`. It starts 20 seconds before the highest recorded RPM, shifted as needed to fit within the trip. This requires `ffmpeg` with `libx264` on `PATH`. Existing reports, GPX tracks, and charts are still generated.
 
 ```bash
 rideology2gpx file.csv --trips --offline --overlay --overlay-fps 60 --overlay-size 1920x512 --redline-rpm 10000
@@ -87,20 +104,20 @@ Each video starts at its trip's first telemetry sample (video time zero). Frames
 
 ### Trip charts
 
-Every run generates a JPEG chart with speed, RPM, and gear and a speed distribution JPEG for each detected trip. The distribution groups GPS distance into 20 km/h speed ranges, using the speed at the end of each recorded interval. Each bar is labeled with its distance in kilometers. Gaps in telemetry contribute no distance.
+A run without `--trips` generates one JPEG chart with speed, RPM, and gear and one speed distribution JPEG for the whole recording. With `--trips`, it generates those charts for each detected trip. The distribution groups GPS distance into 20 km/h speed ranges, using the speed at the end of each recorded interval. Each bar is labeled with its distance in kilometers. Gaps in telemetry contribute no distance.
 
 A JPEG image of the Markdown report is also saved as `ride.export-report.jpg` (using the input stem). It includes the report title, trip sections, and metric and gear tables.
 
-Charts are saved beside the reports and honor `--output-dir` / `-o`. The input stem is preserved (for example, `ride.export.csv` produces `ride.export-trip-1.jpg` and `ride.export-trip-1-speed-distribution.jpg`). Trip numbering starts at 1. Files with matching names are replaced on subsequent runs; older charts with other trip numbers are not automatically deleted if detection settings change.
+Charts are saved beside the reports and honor `--output-dir` / `-o`. The input stem is preserved (for example, `ride.export.csv` produces `ride.export.jpg` and `ride.export-speed-distribution.jpg` without `--trips`, or `ride.export-trip-1.jpg` and `ride.export-trip-1-speed-distribution.jpg` with it). Trip numbering starts at 1. Files with matching names are replaced on subsequent runs; older files with other trip numbers are not automatically deleted when switching between normal and `--trips` mode or changing detection settings. Use a fresh output directory to see only the files from the current run.
 
 Rendering uses Plotters and system fonts.
 
 
-A trip starts when wheel speed exceeds `--min-speed` (default: 3 km/h). Samples at or below that threshold count as stopped. A continuous observed stop lasting at least `--stop-seconds` (default: 120) splits trips. Shorter stops remain inside a trip, so ordinary traffic stops need not create new reports. Stop duration is measured from the first stopped sample to the current sample, including a resuming sample when checking the threshold.
+In `--trips` mode, a trip starts when wheel speed exceeds `--min-speed` (default: 3 km/h). Samples at or below that threshold count as stopped. A continuous observed stop lasting at least `--stop-seconds` (default: 120) splits trips. Shorter stops remain inside a trip, so ordinary traffic stops need not create new reports. Stop duration is measured from the first stopped sample to the current sample, including a resuming sample when checking the threshold.
 
-Recording gaps longer than 1.5 times the recording's median sampling interval always split trips. A gap means missing data, not confirmed stationary time. Leading and trailing stationary samples are excluded: each trip runs from its first moving sample to its last, including any short stops between them. No acceleration or distance is calculated across trip boundaries. A single moving sample is retained as a zero-duration trip, with unavailable acceleration and braking shown as N/A. An entirely stationary recording produces `No movement detected.`
+With `--trips`, recording gaps longer than 1.5 times the recording's median sampling interval split trips. Without `--trips`, one GPX file is generated with separate track segments across those gaps. A gap means missing data, not confirmed stationary time. Leading and trailing stationary samples are excluded: each trip runs from its first moving sample to its last, including any short stops between them. No acceleration or distance is calculated across trip boundaries. A single moving sample is retained as a zero-duration trip, with unavailable acceleration and braking shown as N/A. In `--trips` mode, an entirely stationary recording produces `No movement detected.`
 
-The movement threshold controls both segmentation and the samples used for average and median speed. Total trip time still includes brief stops. There is no minimum trip duration or additional noise filter.
+The movement threshold controls segmentation in `--trips` mode and the samples used for average and median speed in both modes. Total trip time still includes brief stops. There is no minimum trip duration or additional noise filter.
 
 ### Endpoint neighborhoods
 

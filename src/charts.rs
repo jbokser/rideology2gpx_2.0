@@ -15,15 +15,22 @@ use crate::{Result, Sample, distance, median};
 
 pub const SIZE: (u32, u32) = (1400, 1100);
 
-pub fn chart_path(input: &Path, output_directory: &Path, trip: usize) -> Result<PathBuf> {
+pub fn chart_path(input: &Path, output_directory: &Path, trip: Option<usize>) -> Result<PathBuf> {
     let mut name = OsString::from(input.file_stem().ok_or("Input path has no file stem")?);
-    name.push(format!("-trip-{trip}.jpg"));
+    name.push(trip.map_or_else(|| ".jpg".to_owned(), |trip| format!("-trip-{trip}.jpg")));
     Ok(output_directory.join(name))
 }
 
-pub fn distribution_path(input: &Path, output_directory: &Path, trip: usize) -> Result<PathBuf> {
+pub fn distribution_path(
+    input: &Path,
+    output_directory: &Path,
+    trip: Option<usize>,
+) -> Result<PathBuf> {
     let mut name = OsString::from(input.file_stem().ok_or("Input path has no file stem")?);
-    name.push(format!("-trip-{trip}-speed-distribution.jpg"));
+    name.push(trip.map_or_else(
+        || "-speed-distribution.jpg".to_owned(),
+        |trip| format!("-trip-{trip}-speed-distribution.jpg"),
+    ));
     Ok(output_directory.join(name))
 }
 
@@ -44,7 +51,7 @@ pub fn write_distribution_chart(
     path: &Path,
     samples: &[Sample],
     ride_title: &str,
-    trip: usize,
+    trip: Option<usize>,
     date: &str,
 ) -> Result<()> {
     if samples.is_empty() {
@@ -143,12 +150,20 @@ fn speed_by_distance(samples: &[Sample]) -> Vec<(f64, f64)> {
         .collect()
 }
 
-fn chart_title(samples: &[Sample], ride_title: &str, trip: usize, date: &str) -> String {
+pub(crate) fn chart_title(
+    samples: &[Sample],
+    ride_title: &str,
+    trip: Option<usize>,
+    date: &str,
+) -> String {
     let start = samples.first().and_then(|s| s.area.as_deref());
     let end = samples.last().and_then(|s| s.area.as_deref());
     match (start, end) {
         (Some(start), Some(end)) => format!("{start} → {end} ({date})"),
-        _ => format!("{ride_title} #{trip} ({date})"),
+        _ => match trip {
+            Some(trip) => format!("{ride_title} #{trip} ({date})"),
+            None => format!("{ride_title} ({date})"),
+        },
     }
 }
 
@@ -191,7 +206,7 @@ pub fn write_trip_chart(
     path: &Path,
     samples: &[Sample],
     ride_title: &str,
-    trip: usize,
+    trip: Option<usize>,
     date: &str,
 ) -> Result<()> {
     if samples.is_empty() {
@@ -451,18 +466,22 @@ mod tests {
         samples[0].area = Some("Florida".into());
         samples[1].area = Some("Tigre".into());
         assert_eq!(
-            chart_title(&samples, "Ride title", 1, "2026-09-22"),
+            chart_title(&samples, "Ride title", Some(1), "2026-09-22"),
             "Florida → Tigre (2026-09-22)"
         );
         samples[1].area = None;
         assert_eq!(
-            chart_title(&samples, "Ida y vuelta a tigre", 2, "2026-09-22"),
+            chart_title(&samples, "Ida y vuelta a tigre", Some(2), "2026-09-22"),
             "Ida y vuelta a tigre #2 (2026-09-22)"
         );
         samples[0].area = None;
         assert_eq!(
-            chart_title(&samples, "Ida y vuelta a tigre", 1, "2026-09-22"),
+            chart_title(&samples, "Ida y vuelta a tigre", Some(1), "2026-09-22"),
             "Ida y vuelta a tigre #1 (2026-09-22)"
+        );
+        assert_eq!(
+            chart_title(&samples, "Ida y vuelta a tigre", None, "2026-09-22"),
+            "Ida y vuelta a tigre (2026-09-22)"
         );
     }
 

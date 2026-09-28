@@ -142,6 +142,34 @@ fn smooth_positions(samples: &[Sample]) -> Vec<(f64, f64)> {
         .collect()
 }
 
+pub(crate) fn recording_ranges(samples: &[Sample]) -> Vec<std::ops::Range<usize>> {
+    if samples.len() < 2 {
+        return std::iter::once(0..samples.len()).collect();
+    }
+    let intervals: Vec<_> = samples
+        .windows(2)
+        .map(|pair| (pair[1].ms - pair[0].ms) / 1000.0)
+        .collect();
+    let gap_seconds = median(&intervals) * 1.5;
+    let mut ranges = Vec::new();
+    let mut start = 0;
+    for (index, interval) in intervals.iter().enumerate() {
+        if *interval > gap_seconds {
+            ranges.push(start..index + 1);
+            start = index + 1;
+        }
+    }
+    ranges.push(start..samples.len());
+    ranges
+}
+
+pub(crate) fn route_positions(samples: &[Sample]) -> Vec<(f64, f64)> {
+    recording_ranges(samples)
+        .iter()
+        .flat_map(|range| smooth_positions(&samples[range.clone()]))
+        .collect()
+}
+
 pub fn render(
     title: &str,
     trip: usize,
@@ -152,7 +180,8 @@ pub fn render(
     if samples.is_empty() {
         return Err("Cannot export an empty trip".into());
     }
-    let positions = smooth_positions(samples);
+    let ranges = recording_ranges(samples);
+    let positions = route_positions(samples);
     if positions
         .iter()
         .any(|(lat, lon)| !lat.is_finite() || lat.abs() > 90.0 || !lon.is_finite())
@@ -199,12 +228,17 @@ pub fn render(
         let (lat, lon) = positions[index];
         writeln!(output, " <wpt lat=\"{lat:.9}\" lon=\"{lon:.9}\"><time>{}</time><name>{}</name><desc>{}</desc></wpt>", times[index], xml(&name), xml(&desc)).unwrap();
     }
-    writeln!(output, " <trk><name>{name}</name><trkseg>").unwrap();
-    for (i, s) in samples.iter().enumerate() {
-        let (lat, lon) = positions[i];
-        writeln!(output, "  <trkpt lat=\"{lat:.9}\" lon=\"{lon:.9}\"><time>{}</time><extensions><ride:wheel_speed_kmh>{}</ride:wheel_speed_kmh><ride:engine_rpm>{}</ride:engine_rpm><ride:gear>{}</ride:gear></extensions></trkpt>", times[i], s.speed, s.rpm, xml(&s.gear)).unwrap();
+    writeln!(output, " <trk><name>{name}</name>").unwrap();
+    for range in ranges {
+        output.push_str("  <trkseg>\n");
+        for i in range {
+            let s = &samples[i];
+            let (lat, lon) = positions[i];
+            writeln!(output, "   <trkpt lat=\"{lat:.9}\" lon=\"{lon:.9}\"><time>{}</time><extensions><ride:wheel_speed_kmh>{}</ride:wheel_speed_kmh><ride:engine_rpm>{}</ride:engine_rpm><ride:gear>{}</ride:gear></extensions></trkpt>", times[i], s.speed, s.rpm, xml(&s.gear)).unwrap();
+        }
+        output.push_str("  </trkseg>\n");
     }
-    output.push_str(" </trkseg></trk>\n</gpx>\n");
+    output.push_str(" </trk>\n</gpx>\n");
     Ok(output)
 }
 
@@ -255,6 +289,20 @@ mod tests {
         assert_eq!(text.matches("<wpt ").count(), 3);
         assert_eq!(text.matches("<trkpt ").count(), 2);
     }
+    #[test]
+    fn recording_gap_creates_segments_inside_one_gpx_track() {
+        let samples = [
+            sample(0.0, 0.0, 36.0),
+            sample(1000.0, 10.0, 36.0),
+            sample(100000.0, 100.0, 36.0),
+            sample(101000.0, 110.0, 36.0),
+        ];
+        let gpx = render("Test", 1, &samples, start_time("2026-09-22").unwrap(), 0.0).unwrap();
+        assert_eq!(gpx.matches("<trk>").count(), 1);
+        assert_eq!(gpx.matches("<trkseg>").count(), 2);
+        assert_eq!(gpx.matches("<trkpt ").count(), 4);
+    }
+
     #[test]
     fn local_date_defaults_to_midnight_and_explicit_time_is_preserved() {
         let date = start_time("2026-09-22").unwrap();
