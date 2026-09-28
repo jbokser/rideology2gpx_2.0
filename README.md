@@ -55,6 +55,8 @@ The importer finds required columns by name, so extra columns, reordered columns
 
 Quote paths containing spaces. By default, outputs are saved beside the CSV. `--output-dir` writes them to another directory and creates it if necessary. The command prints the text report to standard output; the saved `.txt` file contains only the report. It writes Markdown and text reports, one GPX file such as `ride.gpx`, and JPEG charts; `--overlay` also produces an MP4 video. Add `--trips` to split the report and exported files by moving period. Online mode looks up endpoint area names using Nominatim. Use `--offline` to skip location lookups.
 
+See the [example ride](example/README.md) for a sample CSV and the reports, charts, and map generated from it.
+
 ## Route maps
 
 Each exported route also gets a map image: `ride-map.jpg` in normal mode or `ride-trip-1-map.jpg`, etc. with `--trips`. It shows the route and start/end markers. In online mode, the background uses OpenStreetMap tiles and the image includes OpenStreetMap attribution. This sends the approximate ride area to the tile server. Only tiles for the requested image and zoom are fetched; requests are sequential and cached for at least seven days in `.rideology-cache/tiles`. Set `RIDEOLOGY_MAP_CACHE` to use another cache directory. `RIDEOLOGY_MAP_TILE_URL` can select an HTTPS OpenStreetMap-compatible tile source with `{z}`, `{x}`, and `{y}` placeholders.
