@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
           - os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -47,6 +47,16 @@ jobs:
       - name: Build
         shell: bash
         run: cargo build --locked --release --target '${{ matrix.target }}'
+      - name: Check Linux GLIBC compatibility
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          binary='target/${{ matrix.target }}/release/rideology2gpx'
+          highest=$(readelf --version-info "$binary" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -Vu | tail -n 1)
+          if [[ -n "$highest" && "$(printf '%s\n' "$highest" 'GLIBC_2.35' | sort -V | tail -n 1)" != 'GLIBC_2.35' ]]; then
+            echo "Binary requires $highest, newer than GLIBC_2.35" >&2
+            exit 1
+          fi
       - name: Verify binary version
         shell: bash
         env:
@@ -65,7 +75,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           mkdir -p dist
-          tar -czf "dist/rideology2gpx-${RELEASE_TAG}-${{ matrix.target }}.tar.gz" \
+          tar -czf "dist/rideology2gpx-${RELEASE_TAG}-${{ runner.os == 'Linux' && 'linux-x86_64' || matrix.target }}.tar.gz" \
             -C 'target/${{ matrix.target }}/release' rideology2gpx
       - name: Package Windows binary
         if: runner.os == 'Windows'
@@ -77,7 +87,7 @@ jobs:
           Compress-Archive -Path 'target/${{ matrix.target }}/release/rideology2gpx.exe' -DestinationPath "dist/rideology2gpx-$env:RELEASE_TAG-${{ matrix.target }}.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: binary-${{ matrix.target }}
+          name: binary-${{ runner.os == 'Linux' && 'linux-x86_64' || matrix.target }}
           path: dist/*
           if-no-files-found: error
 

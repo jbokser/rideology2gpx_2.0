@@ -11,12 +11,14 @@ Open the [latest GitHub release](https://github.com/jbokser/rideology2gpx_2.0/re
 
 | System | Release archive |
 | --- | --- |
-| Linux x86-64 | `rideology2gpx-v[VERSION]-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux x86-64 | `rideology2gpx-v[VERSION]-linux-x86_64.tar.gz` |
 | Windows x86-64 | `rideology2gpx-v[VERSION]-x86_64-pc-windows-msvc.zip` |
 | macOS Apple Silicon | `rideology2gpx-v[VERSION]-aarch64-apple-darwin.tar.gz` |
 | macOS Intel | `rideology2gpx-v[VERSION]-x86_64-apple-darwin.tar.gz` |
 
 Replace `[VERSION]` with the release number shown on GitHub. For beta releases, choose one from [all releases](https://github.com/jbokser/rideology2gpx_2.0/releases). GitHub Releases also provides `SHA256SUMS.txt` to check the downloaded archive.
+
+Linux binaries built by the release workflow require GLIBC 2.35 or newer (Ubuntu 22.04 or newer). If your system reports `GLIBC_2.39 not found` for an older release, download a release built with the updated workflow or [build from source](#build-from-source). On systems with an older GLIBC, build from source on that system.
 
 ## Install
 
