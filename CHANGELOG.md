@@ -2,6 +2,13 @@
 
 Changes are grouped by release. Release entries are generated from Git commit subjects; use commit messages such as `feat: add a new option` or `fix: correct GPX timing`.
 
+## [0.1.0-beta.3]
+
+### Fixed
+
+- Build Linux releases with GLIBC 2.35 compatibility
+- Update output directory flag in README.md and .gitignore
+
 ## [0.1.0-beta.2]
 
 ### Added
@@ -14,7 +21,6 @@ Changes are grouped by release. Release entries are generated from Git commit su
 
 - Show shift indicator before gear changes
 - Clarify and clean up video progress output
-
 
 ## [0.1.0-beta.1]
 
