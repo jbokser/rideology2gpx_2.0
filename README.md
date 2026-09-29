@@ -48,7 +48,7 @@ Run the command with a Rideology CSV export:
 ```bash
 rideology2gpx file.csv
 rideology2gpx file.csv --trips --offline
-rideology2gpx file.csv --output-dir reports
+rideology2gpx file.csv -o ./output_dir
 rideology2gpx --help
 rideology2gpx --version
 ```
