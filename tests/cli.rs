@@ -336,6 +336,47 @@ fn single_point_trip_renders_and_stationary_recording_has_no_charts() {
 }
 
 #[test]
+fn filename_timestamp_sets_start_time_unless_date_is_explicit() {
+    let workspace = Workspace::new();
+    let name = "Riding_Vuelta de SAO, ex Atalaya en Campana_20260928091005";
+    let input = format!("{name}.csv");
+    let csv = "Title,Timestamp example\nelapsed_msec,gps_latitude,gps_longitude,engine_RPM,wheel_speed(km/h),water_temperature(C),gear_position\n0,-34.0,-58.0,1000,10,90,1\n1000,-34.0,-57.9999,1000,10,90,1\n";
+    fs::write(workspace.0.join(&input), csv).unwrap();
+    for args in [
+        vec![input.as_str(), "--offline", "-o", "automatic"],
+        vec![
+            input.as_str(),
+            "--offline",
+            "--date",
+            "2026-09-28 09:10:05",
+            "-o",
+            "explicit",
+        ],
+        vec![
+            input.as_str(),
+            "--offline",
+            "--date",
+            "2024-02-29 12:00:00",
+            "-o",
+            "override",
+        ],
+    ] {
+        let result = workspace.run(&args);
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+    let gpx = |directory: &str| {
+        fs::read_to_string(workspace.0.join(directory).join(format!("{name}.gpx"))).unwrap()
+    };
+    assert_eq!(gpx("automatic"), gpx("explicit"));
+    assert_ne!(gpx("automatic"), gpx("override"));
+    assert!(gpx("override").contains("2024-02-29T"));
+}
+
+#[test]
 fn invalid_date_fails_before_writing_output() {
     let workspace = Workspace::new();
     for args in [

@@ -554,13 +554,37 @@ fn report_path(
 
 const USAGE: &str = "Usage: rideology2gpx [OPTIONS] [CSV_FILE]";
 
+fn date_from_filename(path: &std::path::Path) -> Result<Option<String>> {
+    let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+        return Ok(None);
+    };
+    let Some((_, suffix)) = stem.rsplit_once('_') else {
+        return Ok(None);
+    };
+    if suffix.len() != 14 || !suffix.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Ok(None);
+    }
+    let date = format!(
+        "{}-{}-{} {}:{}:{}",
+        &suffix[0..4],
+        &suffix[4..6],
+        &suffix[6..8],
+        &suffix[8..10],
+        &suffix[10..12],
+        &suffix[12..14]
+    );
+    gpx::start_time(&date)
+        .map_err(|error| format!("Invalid date in CSV filename {}: {error}", path.display()))?;
+    Ok(Some(date))
+}
+
 fn print_help() {
     println!(
         "{USAGE}\n\n  Transform Kawasaki Rideology CSV exports into GPX tracks, reports, and route maps.\n\n  CSV_FILE - File exported by the Kawasaki Rideology App. Required unless\n             showing help or version.\n  Output files are saved beside the CSV unless --output-dir is given.\n\n  For more info: https://github.com/jbokser/rideology2gpx_2.0\n  Author: Juan S. Bokser <juan.bokser@gmail.com>\n  Version: {}\n",
         env!("CARGO_PKG_VERSION")
     );
     println!(
-        "Options:\n  -V, --version          Show version and exit.\n  -h, --help             Show this message and exit.\n  -o, --output-dir DIR   Write output files in DIR; create it if needed.\n      --date DATE        Recording start: YYYY-MM-DD[ HH:MM:SS] or RFC3339.\n                          Default: today at 00:00:00 local time.\n      --trips            Split reports and exports by moving period.\n      --min-speed KM/H   Movement threshold (default: 3; strictly greater).\n                          Also filters average and median speed.\n      --stop-seconds SEC Minimum stop separating trips (default: 120).\n                          Requires --trips; gaps split trips only in that mode.\n      --offline          Skip location lookups; draw maps without streets.\n      --overlay          Write an MP4 instrument video for each trip.\n                          Requires ffmpeg with libx264.\n      --overlay-fps FPS  Video frame rate (1-120; default: 30).\n      --overlay-size WxH Even video dimensions (default: 1920x512).\n      --redline-rpm RPM  RPM where the bar turns red (default: 10000).\n      --temp-warning C   Temperature warning in °C (default: 97).\n\n  Video settings imply --overlay. Online mode sends endpoint coordinates to\n  Nominatim and caches area names."
+        "Options:\n  -V, --version          Show version and exit.\n  -h, --help             Show this message and exit.\n  -o, --output-dir DIR   Write output files in DIR; create it if needed.\n      --date DATE        Recording start: YYYY-MM-DD[ HH:MM:SS] or RFC3339.\n                          Default: filename timestamp or today at local midnight.\n      --trips            Split reports and exports by moving period.\n      --min-speed KM/H   Movement threshold (default: 3; strictly greater).\n                          Also filters average and median speed.\n      --stop-seconds SEC Minimum stop separating trips (default: 120).\n                          Requires --trips; gaps split trips only in that mode.\n      --offline          Skip location lookups; draw maps without streets.\n      --overlay          Write an MP4 instrument video for each trip.\n                          Requires ffmpeg with libx264.\n      --overlay-fps FPS  Video frame rate (1-120; default: 30).\n      --overlay-size WxH Even video dimensions (default: 1920x512).\n      --redline-rpm RPM  RPM where the bar turns red (default: 10000).\n      --temp-warning C   Temperature warning in °C (default: 97).\n\n  Video settings imply --overlay. Online mode sends endpoint coordinates to\n  Nominatim and caches area names."
     );
     println!("\n{}", geocoding::ATTRIBUTION);
 }
@@ -568,7 +592,7 @@ fn print_help() {
 fn run() -> Result<()> {
     let mut args = env::args_os().skip(1);
     let mut path = None;
-    let mut date_value = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let mut date_value = None;
     let mut output_dir = None;
     let mut per_trip = false;
     let mut offline = false;
@@ -595,10 +619,12 @@ fn run() -> Result<()> {
             }
             Some("--date") => {
                 let value = args.next().ok_or("--date requires YYYY-MM-DD")?;
-                date_value = value
-                    .to_str()
-                    .ok_or("--date requires a date or datetime")?
-                    .to_owned();
+                date_value = Some(
+                    value
+                        .to_str()
+                        .ok_or("--date requires a date or datetime")?
+                        .to_owned(),
+                );
             }
             Some("--output-dir" | "-o") => {
                 let directory = args
@@ -685,9 +711,14 @@ fn run() -> Result<()> {
     if custom_stop && !per_trip {
         return Err("--stop-seconds requires --trips".into());
     }
+    let path = std::path::PathBuf::from(path.ok_or(USAGE)?);
+    let date_value = match date_value {
+        Some(date) => date,
+        None => date_from_filename(&path)?
+            .unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string()),
+    };
     let start_time = gpx::start_time(&date_value)?;
     let chart_date = start_time.format("%Y-%m-%d").to_string();
-    let path = std::path::PathBuf::from(path.ok_or(USAGE)?);
     let destination = report_path(&path, output_dir.as_deref(), "md")?;
     let text_destination = report_path(&path, output_dir.as_deref(), "txt")?;
     let csv = fs::read(&path).map_err(|error| {
@@ -896,6 +927,28 @@ mod tests {
             error.contains("Record 3: missing value for gear_position"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn csv_filename_timestamp_requires_exact_valid_suffix() {
+        use std::path::Path;
+
+        assert_eq!(
+            date_from_filename(Path::new(
+                "Riding_Vuelta de SAO, ex Atalaya en Campana_20260928091005.csv"
+            ))
+            .unwrap()
+            .as_deref(),
+            Some("2026-09-28 09:10:05")
+        );
+        assert!(date_from_filename(Path::new("ride_20260229091005.csv")).is_err());
+        for name in [
+            "ride.csv",
+            "ride_2026092809100.csv",
+            "ride_20260928091005_extra.csv",
+        ] {
+            assert_eq!(date_from_filename(Path::new(name)).unwrap(), None);
+        }
     }
 
     #[test]

@@ -53,6 +53,8 @@ rideology2gpx --version
 
 The importer finds required columns by name, so extra columns, reordered columns, and a different number of metadata lines are accepted. If a required column is absent, the error lists every missing column.
 
+If the CSV filename ends in `_YYYYMMDDHHmmss.csv`, that timestamp is used as the recording start in the local timezone (for example, `Riding_Example_20260928091005.csv`). An explicit `--date` takes precedence. Other filenames default to local midnight today.
+
 Quote paths containing spaces. By default, outputs are saved beside the CSV. `--output-dir` writes them to another directory and creates it if necessary. The command prints the text report to standard output; the saved `.txt` file contains only the report. It writes Markdown and text reports, one GPX file such as `ride.gpx`, and JPEG charts; `--overlay` also produces an MP4 video. Add `--trips` to split the report and exported files by moving period. Online mode looks up endpoint area names using Nominatim. Use `--offline` to skip location lookups.
 
 See the [example ride](example/README.md) for a sample CSV and the reports, charts, and map generated from it.
