@@ -167,7 +167,7 @@ pub(crate) fn chart_title(
     }
 }
 
-fn axis_label(value: f64) -> String {
+pub(crate) fn axis_label(value: f64) -> String {
     format!("{value:.2}")
         .trim_end_matches('0')
         .trim_end_matches('.')

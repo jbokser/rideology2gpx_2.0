@@ -61,7 +61,7 @@ See the [example ride](example/README.md) for a sample CSV and the reports, char
 
 ## Route maps
 
-Each exported route also gets a map image: `ride-map.jpg` in normal mode or `ride-trip-1-map.jpg`, etc. with `--trips`. It shows the route and start/end markers. In online mode, the background uses OpenStreetMap tiles and the image includes OpenStreetMap attribution. This sends the approximate ride area to the tile server. Only tiles for the requested image and zoom are fetched; requests are sequential and cached for at least seven days in `.rideology-cache/tiles`. Set `RIDEOLOGY_MAP_CACHE` to use another cache directory. `RIDEOLOGY_MAP_TILE_URL` can select an HTTPS OpenStreetMap-compatible tile source with `{z}`, `{x}`, and `{y}` placeholders.
+Each exported route also gets a map image: `ride-map.jpg` in normal mode or `ride-trip-1-map.jpg`, etc. with `--trips`. It shows the route, start/end markers, and a labeled marker at the first point of maximum recorded speed. In online mode, the background uses OpenStreetMap tiles and the image includes OpenStreetMap attribution. This sends the approximate ride area to the tile server. Only tiles for the requested image and zoom are fetched; requests are sequential and cached for at least seven days in `.rideology-cache/tiles`. Set `RIDEOLOGY_MAP_CACHE` to use another cache directory. `RIDEOLOGY_MAP_TILE_URL` can select an HTTPS OpenStreetMap-compatible tile source with `{z}`, `{x}`, and `{y}` placeholders.
 
 With `--offline`, the map is drawn locally on a plain grid. It does not request or read OpenStreetMap tiles or use Nominatim. If online tiles are unavailable, the program warns and saves this plain map instead.
 

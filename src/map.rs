@@ -269,6 +269,28 @@ pub fn write(
                 ))?;
             }
         }
+        let max_speed = samples
+            .iter()
+            .map(|sample| sample.speed)
+            .fold(0.0_f64, f64::max);
+        let peak_index = samples
+            .iter()
+            .position(|sample| sample.speed == max_speed)
+            .unwrap();
+        let peak = route[peak_index];
+        let max_label = format!("Max: {} km/h", charts::axis_label(max_speed));
+        let label_style = ("sans-serif", 22).into_font().color(&BLACK);
+        let (label_width, label_height) = root.estimate_text_size(&max_label, &label_style)?;
+        let label_width = label_width as i32;
+        let label_height = label_height as i32;
+        let label_on_left = peak.0 > WIDTH as i32 / 2;
+        let label_x = if label_on_left {
+            (peak.0 - 16 - label_width).max(20)
+        } else {
+            (peak.0 + 16).min(WIDTH as i32 - 20 - label_width)
+        };
+        let label_y = (peak.1 + label_height / 2).clamp(55, HEIGHT as i32 - 45);
+        root.draw(&Circle::new(peak, 5, RGBColor(180, 42, 38).filled()))?;
         let start = route[0];
         let end = route[route.len() - 1];
         root.draw(&Circle::new(start, 10, WHITE.filled()))?;
@@ -299,6 +321,7 @@ pub fn write(
             ))?;
             Ok(())
         };
+        draw_label(&max_label, (label_x, label_y), 22)?;
         draw_label(
             &charts::chart_title(samples, ride_title, trip, date),
             (20, 36),
