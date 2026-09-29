@@ -1,7 +1,7 @@
 use std::{
     ffi::OsString,
     fs,
-    io::{self, Write},
+    io::{self, IsTerminal, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -317,6 +317,15 @@ fn render(
         .spawn()
         .map_err(|e| format!("Cannot start ffmpeg: {e}"))?;
     let mut stdin = child.stdin.take().ok_or("Cannot open ffmpeg input")?;
+    eprintln!(
+        "Rendering {} video...",
+        if preview_image.is_some() {
+            "overlay"
+        } else {
+            "preview"
+        }
+    );
+    let show_progress = io::stderr().is_terminal();
     let scale = (options.width as f64 / 960.0).min(options.height as f64 / 256.0);
     let offset_x = (options.width as f64 - 960.0 * scale) / 2.0;
     let offset_y = (options.height as f64 - 256.0 * scale) / 2.0;
@@ -488,11 +497,10 @@ fn render(
             .map_err(|e| format!("Cannot write video frame: {e}"))?;
         let progress = (frame + 1) * 100 / frames;
         let previous = frame * 100 / frames;
-        if frame == 0 || progress / 5 > previous / 5 {
+        if show_progress && (frame == 0 || progress / 5 > previous / 5) {
             let filled = (progress / 5) as usize;
             eprint!(
-                "\rOverlay {} [{}{}] {:3}%",
-                path.display(),
+                "\r[{}{}] {:3}%",
                 "#".repeat(filled),
                 ".".repeat(20 - filled),
                 progress
@@ -502,7 +510,10 @@ fn render(
     }
     drop(stdin);
     let status = child.wait()?;
-    eprintln!("\rOverlay {} [{}] 100%", path.display(), "#".repeat(20));
+    if show_progress {
+        eprint!("\r\x1b[2K");
+        io::stderr().flush()?;
+    }
     if !status.success() {
         return Err(format!("ffmpeg failed with {status}").into());
     }
