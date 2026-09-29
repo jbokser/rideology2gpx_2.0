@@ -8,6 +8,9 @@ use std::{
 
 use crate::{Result, Sample};
 
+const LEADING_ZERO_COLOR: [u8; 3] = [43, 51, 58];
+const MAX_COLOR: [u8; 3] = [150, 35, 45];
+
 pub struct Options {
     pub fps: u32,
     pub width: u32,
@@ -53,6 +56,7 @@ fn glyph(c: char) -> [u8; 7] {
         'T' => [31, 4, 4, 4, 4, 4, 4],
         'U' => [17, 17, 17, 17, 17, 17, 14],
         'V' => [17, 17, 17, 17, 17, 10, 4],
+        'X' => [17, 17, 10, 4, 10, 17, 17],
         '/' => [1, 2, 2, 4, 8, 8, 16],
         '-' => [0, 0, 0, 31, 0, 0, 0],
         '+' => [0, 4, 4, 31, 4, 4, 0],
@@ -83,6 +87,12 @@ impl Canvas {
                 self.data[i..i + 3].copy_from_slice(&color);
             }
         }
+    }
+    fn outline_rect(&mut self, x: i32, y: i32, w: i32, h: i32, thickness: i32, color: [u8; 3]) {
+        self.rect(x, y, w, thickness, color);
+        self.rect(x, y + h - thickness, w, thickness, color);
+        self.rect(x, y, thickness, h, color);
+        self.rect(x + w - thickness, y, thickness, h, color);
     }
     fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, color: [u8; 3]) {
         let steps = (x1 - x0).abs().max((y1 - y0).abs()).max(1);
@@ -137,7 +147,11 @@ fn fixed_number(
             x + index as i32 * 6 * scale,
             y,
             scale,
-            if index < leading { [55, 65, 74] } else { color },
+            if index < leading {
+                LEADING_ZERO_COLOR
+            } else {
+                color
+            },
         );
     }
 }
@@ -223,6 +237,21 @@ fn shift_indicator(samples: &[Sample], index: usize, at: f64) -> Option<bool> {
         .then_some(after > before)
 }
 
+fn peak_sample(samples: &[Sample], value: impl Fn(&Sample) -> f64) -> Option<&Sample> {
+    samples
+        .iter()
+        .filter(|sample| value(sample) > 0.0)
+        .max_by(|a, b| {
+            value(a)
+                .total_cmp(&value(b))
+                .then_with(|| b.ms.total_cmp(&a.ms))
+        })
+}
+
+fn peak_visible(peak: Option<&Sample>, at: f64) -> bool {
+    peak.is_some_and(|peak| at >= peak.ms && at < peak.ms + 2000.0)
+}
+
 fn preview_start_ms(samples: &[Sample]) -> Option<f64> {
     let first = samples.first()?;
     let last = samples.last()?;
@@ -240,8 +269,17 @@ pub fn write(path: &Path, samples: &[Sample], options: &Options) -> Result<()> {
     if samples.is_empty() {
         return Err("Cannot render an empty trip".into());
     }
-    let duration_ms = samples.last().unwrap().ms - samples[0].ms;
-    let full_frames = (duration_ms / 1000.0 * options.fps as f64).ceil() as u64 + 1;
+    let first_ms = samples[0].ms;
+    let duration_ms = samples.last().unwrap().ms - first_ms;
+    let display_duration_ms = [
+        peak_sample(samples, |sample| sample.rpm),
+        peak_sample(samples, |sample| sample.speed),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|peak| peak.ms - first_ms + 2000.0)
+    .fold(duration_ms, f64::max);
+    let full_frames = (display_duration_ms / 1000.0 * options.fps as f64).ceil() as u64 + 1;
     if full_frames > 10_000_000 {
         return Err("Overlay duration is too long".into());
     }
@@ -359,9 +397,19 @@ fn render(
     let bar_width = size(570.0);
     let gap = size(2.0).max(1);
     let segment_width = (bar_width - (bars - 1) * gap) / bars;
+    let bar_height = size(26.0);
+    let actual_bar_width = (bars - 1) * (segment_width + gap) + segment_width;
+    let border_padding = size(3.0).max(3);
+    let border_thickness = size(2.0).max(2);
+    let rpm_peak = peak_sample(samples, |sample| sample.rpm);
+    let speed_peak = peak_sample(samples, |sample| sample.speed);
+    let rpm_peak_label = rpm_peak.map(|sample| format!("MAX {}", sample.rpm.round() as u64));
+    let speed_peak_label = speed_peak.map(|sample| format!("MAX {}", sample.speed.round() as u64));
     for frame in 0..frames {
-        let t = (start_ms + frame as f64 * 1000.0 / options.fps as f64).min(duration_ms);
+        let timeline_ms = start_ms + frame as f64 * 1000.0 / options.fps as f64;
+        let t = timeline_ms.min(duration_ms);
         let at = samples[0].ms + t;
+        let display_at = samples[0].ms + timeline_ms;
         let index = samples
             .partition_point(|sample| sample.ms <= at)
             .saturating_sub(1);
@@ -377,6 +425,24 @@ fn render(
         let gear = samples[index].gear.as_str();
         let shift = shift_indicator(samples, index, at);
         let mut c = base.clone();
+        if peak_visible(speed_peak, display_at) {
+            c.text(
+                speed_peak_label.as_deref().unwrap(),
+                x(130.0),
+                y(190.0),
+                size(3.0).max(1),
+                MAX_COLOR,
+            );
+        }
+        if peak_visible(rpm_peak, display_at) {
+            c.text(
+                rpm_peak_label.as_deref().unwrap(),
+                x(420.0),
+                y(18.0),
+                size(3.0).max(1),
+                MAX_COLOR,
+            );
+        }
         fixed_number(&mut c, speed, 3, x(40.0), y(72.0), size(14.0).max(1), white);
         let rpm_color = if rpm > options.redline_rpm && (t / 250.0).floor() as u64 % 2 == 1 {
             [255, 145, 30]
@@ -444,6 +510,13 @@ fn render(
             c.text(&direction, x(690.0), y(202.0), size(3.0).max(1), white);
             compass_needle(&mut c, x(663.0), y(212.0), degrees, scale, white);
         }
+        c.rect(
+            bar_x - border_padding,
+            bar_y - border_padding,
+            actual_bar_width + 2 * border_padding,
+            bar_height + 2 * border_padding,
+            LEADING_ZERO_COLOR,
+        );
         for bar in 0..bars {
             let lower = bar as f64 * max_rpm / bars as f64;
             let zone = if lower >= options.redline_rpm {
@@ -466,10 +539,18 @@ fn render(
                 bar_x + bar * (segment_width + gap),
                 bar_y,
                 segment_width,
-                size(26.0),
+                bar_height,
                 color,
             );
         }
+        c.outline_rect(
+            bar_x - border_padding,
+            bar_y - border_padding,
+            actual_bar_width + 2 * border_padding,
+            bar_height + 2 * border_padding,
+            border_thickness,
+            [255, 255, 255],
+        );
         if let Some(up) = shift {
             shift_triangle(&mut c, x(863.0), y(82.0), up, scale, white);
         }
@@ -535,6 +616,31 @@ mod tests {
             gear: "1".into(),
             area: None,
         }
+    }
+
+    #[test]
+    fn peak_labels_start_at_first_maximum_and_last_two_seconds() {
+        let mut samples = [
+            sample(0.0, 1000.0),
+            sample(1000.0, 5000.0),
+            sample(2000.0, 5000.0),
+        ];
+        samples[2].speed = 80.0;
+        let rpm_peak = peak_sample(&samples, |sample| sample.rpm);
+        let speed_peak = peak_sample(&samples, |sample| sample.speed);
+        assert_eq!(
+            rpm_peak.map(|sample| (sample.ms, sample.rpm)),
+            Some((1000.0, 5000.0))
+        );
+        assert_eq!(
+            speed_peak.map(|sample| (sample.ms, sample.speed)),
+            Some((2000.0, 80.0))
+        );
+        assert!(!peak_visible(rpm_peak, 999.0));
+        assert!(peak_visible(rpm_peak, 1000.0));
+        assert!(peak_visible(rpm_peak, 2999.0));
+        assert!(!peak_visible(rpm_peak, 3000.0));
+        assert!(!peak_visible(None, 1000.0));
     }
 
     #[test]

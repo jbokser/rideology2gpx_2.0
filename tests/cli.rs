@@ -507,7 +507,7 @@ fn overlay_is_mp4_and_uses_elapsed_timestamps() {
     let info = String::from_utf8_lossy(&probe.stdout);
     assert!(info.contains("codec_name=h264"), "{info}");
     assert!(info.contains("pix_fmt=yuv420p"), "{info}");
-    assert!(info.contains("nb_frames=11"), "{info}");
+    assert!(info.contains("nb_frames=31"), "{info}");
     assert!(info.contains("width=1920"), "{info}");
     assert!(info.contains("height=512"), "{info}");
     assert!(workspace.0.join("video.jpg").exists());
