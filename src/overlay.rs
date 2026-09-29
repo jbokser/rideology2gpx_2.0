@@ -209,6 +209,20 @@ fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t
 }
 
+fn shift_indicator(samples: &[Sample], index: usize, at: f64) -> Option<bool> {
+    let current = samples.get(index)?;
+    let next = samples.get(index + 1)?;
+    let remaining = next.ms - at;
+    if !(0.0 < remaining && remaining <= 1000.0) {
+        return None;
+    }
+    let before = gear_number(&current.gear)?;
+    let after = gear_number(&next.gear)?;
+    let elapsed = 1000.0 - remaining;
+    (before != after && ((elapsed / 125.0).floor() as u32).is_multiple_of(2))
+        .then_some(after > before)
+}
+
 fn preview_start_ms(samples: &[Sample]) -> Option<f64> {
     let first = samples.first()?;
     let last = samples.last()?;
@@ -352,13 +366,7 @@ fn render(
         let speed = lerp(samples[index].speed, samples[next].speed, fraction);
         let temp = lerp(samples[index].temp, samples[next].temp, fraction);
         let gear = samples[index].gear.as_str();
-        let shift = if index > 0 && at - samples[index].ms < 1000.0 {
-            gear_number(&samples[index - 1].gear)
-                .zip(gear_number(gear))
-                .and_then(|(before, after)| (before != after).then_some(after > before))
-        } else {
-            None
-        };
+        let shift = shift_indicator(samples, index, at);
         let mut c = base.clone();
         fixed_number(&mut c, speed, 3, x(40.0), y(72.0), size(14.0).max(1), white);
         let rpm_color = if rpm > options.redline_rpm && (t / 250.0).floor() as u64 % 2 == 1 {
@@ -454,10 +462,7 @@ fn render(
             );
         }
         if let Some(up) = shift {
-            let since_change = at - samples[index].ms;
-            if ((since_change / 125.0).floor() as u32).is_multiple_of(2) {
-                shift_triangle(&mut c, x(863.0), y(82.0), up, scale, white);
-            }
+            shift_triangle(&mut c, x(863.0), y(82.0), up, scale, white);
         }
         c.text(
             gear,
@@ -519,6 +524,19 @@ mod tests {
             gear: "1".into(),
             area: None,
         }
+    }
+
+    #[test]
+    fn shift_indicator_blinks_during_second_before_change() {
+        let mut samples = [sample(0.0, 1000.0), sample(2000.0, 2000.0)];
+        samples[1].gear = "2".into();
+        assert_eq!(shift_indicator(&samples, 0, 999.0), None);
+        assert_eq!(shift_indicator(&samples, 0, 1000.0), Some(true));
+        assert_eq!(shift_indicator(&samples, 0, 1125.0), None);
+        assert_eq!(shift_indicator(&samples, 0, 1250.0), Some(true));
+        assert_eq!(shift_indicator(&samples, 1, 2000.0), None);
+        samples[1].gear = "N".into();
+        assert_eq!(shift_indicator(&samples, 0, 1000.0), Some(false));
     }
 
     #[test]
