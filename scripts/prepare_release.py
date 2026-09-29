@@ -87,9 +87,6 @@ def main() -> int:
             notes += f"### {group}\n\n" + "\n".join(
                 f"- {item[:1].upper()}{item[1:]}" for item in sections[group]
             ) + "\n\n"
-    marker = "## [Unreleased]\n"
-    if marker not in changelog:
-        parser.error("CHANGELOG.md is missing its Unreleased section")
     updated_manifest, count = re.subn(
         r'(?m)^(version\s*=\s*")[^"]+("\s*)$',
         lambda match: match.group(1) + version + match.group(2),
