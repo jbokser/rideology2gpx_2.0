@@ -1,6 +1,6 @@
 [package]
 name = "rideology2gpx"
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 edition = "2024"
 description = "Rideology CSV ride reports"
 

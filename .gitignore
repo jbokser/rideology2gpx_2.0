@@ -6,6 +6,7 @@
 /*.md
 /*.csv
 /*.mp4
+/output_dir/
 !/AGENTS.md
 !/README.md
 !/CHANGELOG.md
