@@ -2,6 +2,20 @@
 
 Changes are grouped by release. Release entries are generated from Git commit subjects; use commit messages such as `feat: add a new option` or `fix: correct GPX timing`.
 
+## [0.1.0-beta.2]
+
+### Added
+
+- Infer recording start time from CSV filename
+- Highlight peak values and refine RPM gauge
+- Mark maximum speed on route image
+
+### Fixed
+
+- Show shift indicator before gear changes
+- Clarify and clean up video progress output
+
+
 ## [0.1.0-beta.1]
 
 ### Added
