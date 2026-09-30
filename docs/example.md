@@ -3,12 +3,12 @@
 Run:
 
 ```bash
-$ rideology2gpx example/ride.csv 
-GPX saved to example/ride.gpx
-Chart saved to example/ride.jpg
-Distribution saved to example/ride-speed-distribution.jpg
-Map saved to example/ride-map.jpg
-Report image saved to example/ride-report.jpg
+$ rideology2gpx docs/files/ride.csv 
+GPX saved to docs/files/ride.gpx
+Chart saved to docs/files/ride.jpg
+Distribution saved to docs/files/ride-speed-distribution.jpg
+Map saved to docs/files/ride-map.jpg
+Report image saved to docs/files/ride-report.jpg
 
 From gas station to next gas station
 ==== === ======= == ==== === =======
@@ -36,7 +36,7 @@ Max for each gear
      3   3784      58
      4   3846      60
 
-Reports saved to example/ride.md and example/ride.txt
+Reports saved to docs/files/ride.md and docs/files/ride.txt
 ```
 
 The command prints the text report and writes `.md`, `.txt`, `.gpx`, chart `.jpg`, and route map `.jpg` files.
@@ -45,16 +45,16 @@ The command prints the text report and writes `.md`, `.txt`, `.gpx`, chart `.jpg
 
 ### Ride chart
 
-![Ride chart](ride.jpg)
+![Ride chart](files/ride.jpg)
 
 ### Speed distribution
 
-![Speed distribution](ride-speed-distribution.jpg)
+![Speed distribution](files/ride-speed-distribution.jpg)
 
 ### Route map
 
-![Route map](ride-map.jpg)
+![Route map](files/ride-map.jpg)
 
 ### Report
 
-![Report](ride-report.jpg)
+![Report](files/ride-report.jpg)

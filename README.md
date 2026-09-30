@@ -1,8 +1,10 @@
-# **$ rideology2gpx**
+![](docs/images/main.png)
+
+# **`$ rideology2gpx`**
 
 A simple command line program that convert Kawasaki Rideology `.csv` exports into `.gpx` tracks, `.txt` and `.md` reports, and `.jpg` charts. Optional instrument videos require _FFmpeg_.
 
-![](docs/logo.jpg)
+![Examples](docs/images/examples.png)
 
 
 ## Download
@@ -41,6 +43,14 @@ rideology2gpx --version
 
 The program uses system fonts to render JPEG charts. Install a sans-serif font if your system does not have one. Instrument videos also require `ffmpeg` with `libx264` on `PATH`.
 
+## Export a ride from Rideology
+
+![Rideology Log List screenshot](docs/images/rideology_screenshot.png)
+
+1. Open the Rideology app and go to **Log List**.
+2. Find the ride you want to export and tap the three-dot menu in its corner.
+3. Select **Log Output**. Rideology exports the ride as a `.csv` file and opens the share menu so you can save or send it using an app of your choice.
+
 ## Use
 
 Run the command with a Rideology CSV export:
@@ -59,7 +69,7 @@ If the CSV filename ends in `_YYYYMMDDHHmmss.csv`, that timestamp is used as the
 
 Quote paths containing spaces. By default, outputs are saved beside the CSV. `--output-dir` writes them to another directory and creates it if necessary. The command prints the text report to standard output; the saved `.txt` file contains only the report. It writes Markdown and text reports, one GPX file such as `ride.gpx`, and JPEG charts; `--overlay` also produces an MP4 video. Add `--trips` to split the report and exported files by moving period. Online mode looks up endpoint area names using Nominatim. Use `--offline` to skip location lookups.
 
-See the [example ride](example/README.md) for a sample CSV and the reports, charts, and map generated from it.
+See the [example ride](docs/example.md) for a sample CSV and the reports, charts, and map generated from it.
 
 ## Route maps
 
@@ -94,9 +104,9 @@ Trip boundaries prevent interpolation across missing telemetry. The fitted traje
 
 ### Instrument video
 
-[![Instrument video preview](docs/preview.jpg)](docs/preview.mp4)
+[![Instrument video preview](docs/images/preview.jpg)](docs/videos/preview.mp4)
 
-[Watch the sample video (MP4)](docs/preview.mp4). The image above links to the same video.
+[Watch the sample video (MP4)](docs/videos/preview.mp4). The image above links to the same video.
 
 Add `--overlay` to export an H.264 `.mp4` with a black background for each exported route. Without `--trips`, the video is saved beside the GPX and JPG files as `input.mp4`, with `input-preview.jpg` and, for a ride longer than 30 seconds, `input-preview.mp4`. With `--trips`, the files use names such as `input-trip-1.mp4` and `input-trip-1-preview.jpg`. It starts 20 seconds before the highest recorded RPM, shifted as needed to fit within the trip. This requires `ffmpeg` with `libx264` on `PATH`. Existing reports, GPX tracks, and charts are still generated.
 
