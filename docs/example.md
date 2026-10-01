@@ -1,8 +1,10 @@
-# Example
+# Example use case: Convert a Rideology ride to GPX and reports
+
+This example converts a Rideology `.csv` export for a short ride into a `.gpx` route, ride statistics, and visual reports. The source ride title and data are preserved in the generated files.
 
 Run:
 
-```bash
+```shell
 $ rideology2gpx docs/files/ride.csv 
 GPX saved to docs/files/ride.gpx
 Chart saved to docs/files/ride.jpg
@@ -39,7 +41,18 @@ Max for each gear
 Reports saved to docs/files/ride.md and docs/files/ride.txt
 ```
 
-The command prints the text report and writes `.md`, `.txt`, `.gpx`, chart `.jpg`, and route map `.jpg` files.
+The command prints the text report and saves the following files beside the source CSV:
+
+| File | Description |
+| --- | --- |
+| [ride.csv](files/ride.csv) | Original Rideology export used as input. |
+| [ride.gpx](files/ride.gpx) | GPS track for viewing the route in a GPX-compatible app. |
+| [ride.md](files/ride.md) | Ride statistics formatted as a Markdown report. |
+| [ride.txt](files/ride.txt) | The same statistics as a plain-text report. |
+| [ride.jpg](files/ride.jpg) | Chart of recorded ride data over time. |
+| [ride-speed-distribution.jpg](files/ride-speed-distribution.jpg) | Distribution of recorded wheel speeds. |
+| [ride-map.jpg](files/ride-map.jpg) | Route map with ride markers. |
+| [ride-report.jpg](files/ride-report.jpg) | Image version of the ride statistics report. |
 
 ## Generated images
 

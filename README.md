@@ -2,9 +2,58 @@
 
 # **`$ rideology2gpx`**
 
-A simple command line program that convert Kawasaki Rideology `.csv` exports into `.gpx` tracks, `.txt` and `.md` reports, and `.jpg` charts. Optional instrument videos require _FFmpeg_.
+A simple command line program that converts Kawasaki Rideology `.csv` exports into `.gpx` tracks, `.txt` and `.md` reports, and `.jpg` charts. Optional instrument videos require _FFmpeg_.
+
+[RIDEOLOGY THE APP](https://www.kawasaki.eu/en/about-kawasaki/rideology.html) is Kawasaki's smartphone app for compatible motorcycles. It records riding logs that can include a GPS route and motorcycle data, depending on the model. The ride `.csv` files exported from this app are the input data for `rideology2gpx`.
 
 ![Examples](docs/images/examples.png)
+
+
+## Export a ride from Rideology
+
+![Rideology Log List screenshot](docs/images/rideology_screenshot.png)
+
+1. Open the Rideology app and go to **Log List**.
+2. Find the ride you want to export and tap the three-dot menu in its corner.
+3. Select **Log Output**. Rideology exports the ride as a `.csv` file and opens the share menu so you can save or send it using an app of your choice.
+
+
+## Use
+
+Run the command with a Rideology CSV export:
+
+```bash
+rideology2gpx file.csv
+rideology2gpx file.csv --trips --offline
+rideology2gpx file.csv -o ./output_dir
+rideology2gpx --help
+rideology2gpx --version
+```
+
+The importer finds required columns by name, so extra columns, reordered columns, and a different number of metadata lines are accepted. If a required column is absent, the error lists every missing column.
+
+If the CSV filename ends in `_YYYYMMDDHHmmss.csv`, that timestamp is used as the recording start in the local timezone (for example, `Riding_Example_20260928091005.csv`). An explicit `--date` takes precedence. Other filenames default to local midnight today.
+
+Quote paths containing spaces. By default, outputs are saved beside the CSV. `--output-dir` writes them to another directory and creates it if necessary. The command prints the text report to standard output; the saved `.txt` file contains only the report. It writes Markdown and text reports, one GPX file such as `ride.gpx`, and JPEG charts; `--overlay` also produces an MP4 video. Add `--trips` to split the report and exported files by moving period. Online mode looks up endpoint area names using Nominatim. Use `--offline` to skip location lookups.
+
+
+## Example ride
+
+Want to see what a conversion produces? Open the [complete example ride](docs/example.md). It starts with a Rideology CSV from a short ride and shows the command and its printed statistics. You can open the generated GPX track, Markdown and text reports, ride chart, speed distribution chart, route map, and report image. The page also displays the generated images so you can preview the results before running the program with your own CSV.
+
+
+## Route maps
+
+Each exported route also gets a map image: `ride-map.jpg` in normal mode or `ride-trip-1-map.jpg`, etc. with `--trips`. It shows the route, start/end markers, and a labeled marker at the first point of maximum recorded speed. In online mode, the background uses OpenStreetMap tiles and the image includes OpenStreetMap attribution. This sends the approximate ride area to the tile server. Only tiles for the requested image and zoom are fetched; requests are sequential and cached for at least seven days in `.rideology-cache/tiles`. Set `RIDEOLOGY_MAP_CACHE` to use another cache directory. `RIDEOLOGY_MAP_TILE_URL` can select an HTTPS OpenStreetMap-compatible tile source with `{z}`, `{x}`, and `{y}` placeholders.
+
+With `--offline`, the map is drawn locally on a plain grid. It does not request or read OpenStreetMap tiles or use Nominatim. If online tiles are unavailable, the program warns and saves this plain map instead.
+
+
+## Project history and author
+
+This Rust project replaces the original [rideology2gpx Python program](https://github.com/jbokser/rideology2gpx), which is why this repository is named `rideology2gpx_2.0`.
+
+Author: **Juan S. Bokser** ([GitHub](https://github.com/jbokser), [email](mailto:juan.bokser@gmail.com)). This Rust version was made 100% through vibe coding with OpenAI Codex under his direction.
 
 
 ## Download
@@ -21,6 +70,7 @@ Open the [latest GitHub release](https://github.com/jbokser/rideology2gpx_2.0/re
 Replace `[VERSION]` with the release number shown on GitHub. For beta releases, choose one from [all releases](https://github.com/jbokser/rideology2gpx_2.0/releases). GitHub Releases also provides `SHA256SUMS.txt` to check the downloaded archive.
 
 Linux binaries built by the release workflow require GLIBC 2.35 or newer (Ubuntu 22.04 or newer). If your system reports `GLIBC_2.39 not found` for an older release, download a release built with the updated workflow or [build from source](#build-from-source). On systems with an older GLIBC, build from source on that system.
+
 
 ## Install
 
@@ -43,45 +93,6 @@ rideology2gpx --version
 
 The program uses system fonts to render JPEG charts. Install a sans-serif font if your system does not have one. Instrument videos also require `ffmpeg` with `libx264` on `PATH`.
 
-## Export a ride from Rideology
-
-![Rideology Log List screenshot](docs/images/rideology_screenshot.png)
-
-1. Open the Rideology app and go to **Log List**.
-2. Find the ride you want to export and tap the three-dot menu in its corner.
-3. Select **Log Output**. Rideology exports the ride as a `.csv` file and opens the share menu so you can save or send it using an app of your choice.
-
-## Use
-
-Run the command with a Rideology CSV export:
-
-```bash
-rideology2gpx file.csv
-rideology2gpx file.csv --trips --offline
-rideology2gpx file.csv -o ./output_dir
-rideology2gpx --help
-rideology2gpx --version
-```
-
-The importer finds required columns by name, so extra columns, reordered columns, and a different number of metadata lines are accepted. If a required column is absent, the error lists every missing column.
-
-If the CSV filename ends in `_YYYYMMDDHHmmss.csv`, that timestamp is used as the recording start in the local timezone (for example, `Riding_Example_20260928091005.csv`). An explicit `--date` takes precedence. Other filenames default to local midnight today.
-
-Quote paths containing spaces. By default, outputs are saved beside the CSV. `--output-dir` writes them to another directory and creates it if necessary. The command prints the text report to standard output; the saved `.txt` file contains only the report. It writes Markdown and text reports, one GPX file such as `ride.gpx`, and JPEG charts; `--overlay` also produces an MP4 video. Add `--trips` to split the report and exported files by moving period. Online mode looks up endpoint area names using Nominatim. Use `--offline` to skip location lookups.
-
-See the [example ride](docs/example.md) for a sample CSV and the reports, charts, and map generated from it.
-
-## Route maps
-
-Each exported route also gets a map image: `ride-map.jpg` in normal mode or `ride-trip-1-map.jpg`, etc. with `--trips`. It shows the route, start/end markers, and a labeled marker at the first point of maximum recorded speed. In online mode, the background uses OpenStreetMap tiles and the image includes OpenStreetMap attribution. This sends the approximate ride area to the tile server. Only tiles for the requested image and zoom are fetched; requests are sequential and cached for at least seven days in `.rideology-cache/tiles`. Set `RIDEOLOGY_MAP_CACHE` to use another cache directory. `RIDEOLOGY_MAP_TILE_URL` can select an HTTPS OpenStreetMap-compatible tile source with `{z}`, `{x}`, and `{y}` placeholders.
-
-With `--offline`, the map is drawn locally on a plain grid. It does not request or read OpenStreetMap tiles or use Nominatim. If online tiles are unavailable, the program warns and saves this plain map instead.
-
-## Project history and author
-
-This Rust project replaces the original [rideology2gpx Python program](https://github.com/jbokser/rideology2gpx), which is why this repository is named `rideology2gpx_2.0`.
-
-Author: **Juan S. Bokser** ([GitHub](https://github.com/jbokser), [email](mailto:juan.bokser@gmail.com)). This Rust version was made 100% through vibe coding with OpenAI Codex under his direction.
 
 ## Build from source
 
@@ -94,6 +105,7 @@ cargo build --release
 
 On Windows, use `target\release\rideology2gpx.exe`. On Debian/Ubuntu, building requires `pkg-config`, `libfreetype6-dev`, and `libfontconfig1-dev`; install a sans-serif font such as `fonts-dejavu-core` for rendering.
 
+
 ### GPS jitter correction
 
 GPX coordinates are reconstructed; report statistics and JPGs continue using the original GPS data. The algorithm fits GPS observations and wheel-distance constraints together in a local metric projection. For the interval ending at sample `i`, the target distance is `wheel_speed[i] / 3.6 × actual_elapsed_seconds`. Consecutive samples with zero wheel speed share exactly one position, including their arrival interval, so stopped points do not wander. Their GPS anchor is the median position of the stationary group.
@@ -101,6 +113,7 @@ GPX coordinates are reconstructed; report statistics and JPGs continue using the
 For moving points, 200 bidirectional constraint-fitting passes adjust neighboring positions toward the wheel distance, with a small attraction (2.5% per pass) toward GPS anchors to limit drift. This is a compromise: derived GPS speed approximates wheel speed; it is not guaranteed to match it exactly. Coordinates and start/end locations can move slightly. No map matching is performed, turns can be softened, and the result is not a surveyed or exact original trajectory. If GPS fixes coincide while the wheel indicates motion, a nearby GPS heading is used when available; without any heading information, the exporter does not invent a direction. The local projection is intended for regional rides, not polar or globe-spanning tracks.
 
 Trip boundaries prevent interpolation across missing telemetry. The fitted trajectory does not remove samples or change their times. A viewer that calculates speed from consecutive points should show less jitter, although its own filtering and interpolation may affect the displayed result.
+
 
 ### Instrument video
 
@@ -118,6 +131,7 @@ The default video is a 1920x512 instrument panel at 30 FPS, ready to position in
 
 Each video starts at its trip's first telemetry sample (video time zero). Frames are placed on the output FPS timeline and speed, RPM, and coolant temperature are linearly interpolated using `elapsed_msec`. Gear changes occur at their recorded timestamps and remain discrete; neutral is green and upshifts and downshifts show a blinking white triangle beside the gear during the second before each shift. Speed appears first, gear sits beside RPM, and coolant temperature appears smaller below RPM. Beside it, signed acceleration in g uses wheel-speed changes; its label changes from `ACCEL G` to `BRAKE G` when the value is negative, followed by GPS direction in degrees and eight compass points with a short compass needle to the left of the direction text. The video uses a pixel-style monospace font. Leading zero placeholders are dark gray while significant digits remain white. A dark red `MAX` and the peak value appear beside `RPM` and `KM/H` for two seconds after each metric first reaches its recorded peak; the video extends when needed to show the full label. The RPM bar has a white border and a dark gray background matching the leading zero placeholders. It progresses from green to yellow at 80% of the configured redline, then red at the redline. The last telemetry instant is included; the encoded video duration is rounded up to a whole frame. Align the video's first frame with the trip's first GPX track point or the elapsed range in the `--trips` report. A status line announces each video render. An interactive progress bar appears on the next terminal line and is cleared when rendering finishes. To place the video over camera footage, use a Screen or Lighten blend mode in your editor; black pixels then contribute no light to the composite. MP4 does not carry an alpha channel.
 
+
 ### Trip charts
 
 A run without `--trips` generates one JPEG chart with speed, RPM, and gear and one speed distribution JPEG for the whole recording. With `--trips`, it generates those charts for each detected trip. The distribution groups GPS distance into 20 km/h speed ranges, using the speed at the end of each recorded interval. Each bar is labeled with its distance in kilometers. Gaps in telemetry contribute no distance.
@@ -128,12 +142,12 @@ Charts are saved beside the reports and honor `--output-dir` / `-o`. The input s
 
 Rendering uses Plotters and system fonts.
 
-
 In `--trips` mode, a trip starts when wheel speed exceeds `--min-speed` (default: 3 km/h). Samples at or below that threshold count as stopped. A continuous observed stop lasting at least `--stop-seconds` (default: 120) splits trips. Shorter stops remain inside a trip, so ordinary traffic stops need not create new reports. Stop duration is measured from the first stopped sample to the current sample, including a resuming sample when checking the threshold.
 
 With `--trips`, recording gaps longer than 1.5 times the recording's median sampling interval split trips. Without `--trips`, one GPX file is generated with separate track segments across those gaps. A gap means missing data, not confirmed stationary time. Leading and trailing stationary samples are excluded: each trip runs from its first moving sample to its last, including any short stops between them. No acceleration or distance is calculated across trip boundaries. A single moving sample is retained as a zero-duration trip, with unavailable acceleration and braking shown as N/A. In `--trips` mode, an entirely stationary recording produces `No movement detected.`
 
 The movement threshold controls segmentation in `--trips` mode and the samples used for average and median speed in both modes. Total trip time still includes brief stops. There is no minimum trip duration or additional noise filter.
+
 
 ### Endpoint neighborhoods
 
@@ -145,6 +159,7 @@ By default, the CLI sends only the reported start and end coordinates to [Nomina
 Cache files are stored in `.rideology-cache/` under the current working directory (ignored by Git). They contain queried coordinates and area names, not whole ride traces. Set `RIDEOLOGY_GEOCODE_CACHE` to share a cache across working directories. Cached results do not expire automatically; delete `areas.json` to refresh names. `--offline` skips both cache reads and network lookups. When either endpoint area name is unavailable, the chart title uses the original CSV ride title plus the trip number, such as `Ride title #1 (2026-09-22)`. A custom or self-hosted reverse-geocoding endpoint can be selected with `NOMINATIM_URL` without changing the code.
 
 Location data: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), available under the ODbL.
+
 
 ## Publish a version
 
@@ -164,6 +179,7 @@ git push origin v0.1.0-beta.1
 
 The tag triggers the release workflow. It checks the version, builds four platform archives, verifies `--version` and `-V`, and publishes them with SHA-256 checksums. Tags with a suffix such as `-beta.1` create GitHub prereleases. The preparation command does not publish or push anything, so review the generated changelog before tagging.
 
+
 ## Verification
 
 ```bash
@@ -171,4 +187,4 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 ```
 
-Errors are printed to stderr and return exit code 1.
+Errors are printed to stderr and return exit code `1`.
