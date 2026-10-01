@@ -163,7 +163,7 @@ Location data: © [OpenStreetMap contributors](https://www.openstreetmap.org/cop
 
 ## Publish a version
 
-Run `python3 scripts/prepare_release.py` without arguments to see a suggested next tag. This only prints a suggestion: it does not change files or publish anything. With no existing tag, it suggests the first beta; after a beta it increments the beta number; after a stable release it suggests a patch release. You can choose a different version explicitly.
+Run `python3 scripts/prepare_release.py` without arguments to see a suggested next tag. This only prints a suggestion: it does not change files or publish anything. With no existing tag, it suggests the first beta; after a beta it increments the beta number; after a stable release it suggests the first beta of the next patch release. You can choose a different version explicitly.
 
 Use English [Conventional Commit](https://www.conventionalcommits.org/en/v1.0.0/) subjects such as `feat: add a new option` or `fix: correct GPX timing`. The release preparation command collects these subjects since the previous tag into [CHANGELOG.md](CHANGELOG.md), updates `Cargo.toml` and `Cargo.lock`, and runs `cargo check` offline. It requires a clean working tree and Python 3.8 or newer.
 

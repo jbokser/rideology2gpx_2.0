@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "Cargo.toml"
 CHANGELOG = ROOT / "CHANGELOG.md"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?$")
+TAG_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?$")
 GROUPS = {
     "feat": "Added",
     "fix": "Fixed",
@@ -24,16 +25,25 @@ def git(*args: str) -> str:
     return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
 
 
+def tag_order(tag: str) -> tuple:
+    match = TAG_RE.fullmatch(tag)
+    if match is None:
+        raise ValueError(f"Unsupported previous tag: {tag}")
+    major, minor, patch, stage, number = match.groups()
+    stage_order = {"alpha": 0, "beta": 1, "rc": 2, None: 3}
+    return (int(major), int(minor), int(patch), stage_order[stage], int(number or 0))
+
+
 def suggest_version(current: str, previous: Optional[str]) -> str:
     if previous is None:
         return current if "-" in current else f"{current}-beta.1"
-    match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?", previous)
+    match = TAG_RE.fullmatch(previous)
     if match is None:
         raise ValueError(f"Unsupported previous tag: {previous}")
     major, minor, patch, stage, number = match.groups()
     if stage is not None:
         return f"{major}.{minor}.{patch}-{stage}.{int(number) + 1}"
-    return f"{major}.{minor}.{int(patch) + 1}"
+    return f"{major}.{minor}.{int(patch) + 1}-beta.1"
 
 
 def main() -> int:
@@ -46,8 +56,8 @@ def main() -> int:
     if current_match is None:
         parser.error("Cargo.toml is missing a package version")
     current = current_match.group(1)
-    previous_tags = git("tag", "--list", "v[0-9]*", "--sort=-version:refname").splitlines()
-    previous = previous_tags[0] if previous_tags else None
+    previous_tags = git("tag", "--list", "v[0-9]*").splitlines()
+    previous = max(previous_tags, key=tag_order) if previous_tags else None
     if args.version is None:
         suggestion = suggest_version(current, previous)
         print(f"Previous tag: {previous or '(none)'}")
