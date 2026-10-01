@@ -133,4 +133,4 @@ jobs:
         run: |
           options=(--verify-tag --notes-file RELEASE_NOTES.md)
           if [[ "$RELEASE_TAG" == *-* ]]; then options+=(--prerelease); fi
-          gh release create "$RELEASE_TAG" dist/* "${options[@]}"
+          gh release create "$RELEASE_TAG" dist/* --title "$RELEASE_TAG" "${options[@]}"
