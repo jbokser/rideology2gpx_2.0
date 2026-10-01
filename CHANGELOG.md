@@ -2,6 +2,13 @@
 
 Changes are grouped by release. Release entries are generated from Git commit subjects; use commit messages such as `feat: add a new option` or `fix: correct GPX timing`.
 
+## [0.1.0]
+
+### Documentation
+
+- Improve README presentation and organize media assets
+- Reorganize README and expand example ride guide
+
 ## [0.1.0-beta.3]
 
 ### Fixed
